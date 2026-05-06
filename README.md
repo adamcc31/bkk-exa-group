@@ -34,3 +34,13 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Database Migration Checklist
+
+Sebelum setiap migration baru yang menyentuh tabel atau policy:
+
+- [ ] Jalankan `npm run db:verify-rls` pada staging database
+- [ ] Pastikan semua tabel baru ikut mendapat `ENABLE ROW LEVEL SECURITY` + `FORCE`
+- [ ] Pastikan setiap policy baru punya `WITH CHECK` untuk operasi write
+- [ ] Pastikan `withDbContext` digunakan di semua route yang menyentuh tabel baru
+- [ ] Verify `DATABASE_URL` di Railway menggunakan `app_runtime`, bukan `postgres`

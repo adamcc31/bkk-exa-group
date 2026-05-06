@@ -1,10 +1,13 @@
 // ============================================
-// Audit Log Service
+// Audit Log Service (Post-Supabase)
 // ============================================
 
-import { createSupabaseServerClient } from "@/shared/lib/supabase/server";
+import { withDbContext } from "@/shared/lib/db/client";
 import type { AuthSession, AuditLog, ApiResponse } from "@/shared/types";
 
+/**
+ * Writes a new audit log entry
+ */
 export async function writeAuditLog(params: {
     session: AuthSession;
     action: string;
@@ -14,53 +17,84 @@ export async function writeAuditLog(params: {
     newValue?: Record<string, unknown> | null;
     ipAddress?: string;
 }): Promise<void> {
-    const supabase = await createSupabaseServerClient();
-
-    await supabase.from("audit_logs").insert({
-        company_id: params.session.activeCompanyId,
-        user_id: params.session.user.id,
-        action: params.action,
-        entity_type: params.entityType,
-        entity_id: params.entityId,
-        old_value: params.oldValue ?? null,
-        new_value: params.newValue ?? null,
-        ip_address: params.ipAddress ?? null,
-    });
+    await withDbContext(
+        params.session.user.id,
+        params.session.activeCompanyId,
+        params.session.role,
+        params.session.user.company_id,
+        async (client) => {
+            await client.query(
+                `INSERT INTO audit_logs (
+                company_id, user_id, action, entity_type, entity_id, 
+                old_value, new_value, ip_address
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                    params.session.activeCompanyId,
+                    params.session.user.id,
+                    params.action,
+                    params.entityType,
+                    params.entityId,
+                    params.oldValue ?? null,
+                    params.newValue ?? null,
+                    params.ipAddress ?? null,
+                ]
+            );
+        }
+    );
 }
 
+/**
+ * Lists audit logs with pagination
+ */
 export async function listAuditLogs(
+    session: AuthSession,
     query: { page?: number; pageSize?: number; entity_type?: string }
 ): Promise<ApiResponse<AuditLog[]>> {
-    const supabase = await createSupabaseServerClient();
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 30;
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    return await withDbContext(
+        session.user.id,
+        session.activeCompanyId,
+        session.role,
+        session.user.company_id,
+        async (client) => {
+            const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 30;
+        const offset = (page - 1) * pageSize;
 
-    let qb = supabase
-        .from("audit_logs")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
+        const params: any[] = [];
+        let whereClause = "";
 
-    if (query.entity_type) {
-        qb = qb.eq("entity_type", query.entity_type);
-    }
+        if (query.entity_type) {
+            whereClause = "WHERE entity_type = $1";
+            params.push(query.entity_type);
+        }
 
-    const { data, error, count } = await qb;
+        const nextIdx = params.length + 1;
 
-    if (error) {
-        return { success: false, error: { code: "DB_ERROR", message: error.message } };
-    }
+        // 1. Get total count
+        const countRes = await client.query(
+            `SELECT COUNT(*)::INT as total FROM audit_logs ${whereClause}`,
+            params
+        );
+        const total = countRes.rows[0].total;
 
-    return {
-        success: true,
-        data: (data as AuditLog[]) ?? [],
-        meta: {
-            page,
-            pageSize,
-            total: count ?? 0,
-            totalPages: Math.ceil((count ?? 0) / pageSize),
-        },
-    };
+        // 2. Get data
+        const dataRes = await client.query(
+            `SELECT * FROM audit_logs 
+             ${whereClause} 
+             ORDER BY created_at DESC 
+             LIMIT $${nextIdx} OFFSET $${nextIdx + 1}`,
+            [...params, pageSize, offset]
+        );
+
+        return {
+            success: true,
+            data: dataRes.rows as AuditLog[],
+            meta: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.ceil(total / pageSize),
+            },
+        };
+    });
 }

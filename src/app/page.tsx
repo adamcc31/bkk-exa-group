@@ -1,21 +1,20 @@
 // ============================================
-// Home Page — Redirect to Dashboard or Login
+// Home Page — Redirect to Dashboard or Login (Post-Supabase)
 // ============================================
 
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/shared/lib/supabase/server";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    // Middleware already verified the token and set the headers
+    const headerList = await headers();
+    const userId = headerList.get("x-user-id");
 
-  if (user) {
-    redirect("/transactions");
-  } else {
-    redirect("/login");
-  }
+    if (userId) {
+        redirect("/transactions");
+    } else {
+        redirect("/login");
+    }
 }

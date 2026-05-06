@@ -1,5 +1,5 @@
 // ============================================
-// Client-Side Image Preprocessor
+// Client-Side Image Preprocessor (Post-Supabase)
 // Resizes and compresses images before upload
 // ============================================
 
@@ -34,36 +34,39 @@ export async function preprocessImage(file: File): Promise<Blob> {
 }
 
 /**
- * Upload preprocessed files to Supabase Storage
- * Returns array of file paths in the storage bucket
+ * Upload preprocessed files to the custom /api/upload endpoint.
+ * Returns array of file paths in the storage bucket.
  */
 export async function uploadFilesToStorage(
     files: File[],
-    companyId: string,
-    supabaseClient: ReturnType<typeof import("@/shared/lib/supabase/client").createSupabaseBrowserClient>
+    companyId: string
 ): Promise<string[]> {
-    const filePaths: string[] = [];
+    const formData = new FormData();
 
     for (const file of files) {
         const preprocessed = await preprocessImage(file);
-        const timestamp = Date.now();
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `${companyId}/${timestamp}_${safeName}`;
-
-        const { error } = await supabaseClient.storage
-            .from("uploads")
-            .upload(path, preprocessed, {
-                contentType: "image/jpeg",
-                upsert: false,
-            });
-
-        if (error) {
-            console.error(`Upload failed for ${file.name}:`, error.message);
-            continue;
-        }
-
-        filePaths.push(path);
+        // Create a new File object from the preprocessed blob to preserve the name
+        const preprocessedFile = new File([preprocessed], file.name, {
+            type: "image/jpeg",
+        });
+        formData.append("files", preprocessedFile);
     }
 
-    return filePaths;
+    try {
+        const response = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Upload failed");
+        }
+
+        return result.data.file_paths;
+    } catch (error) {
+        console.error("Upload error:", error);
+        throw error;
+    }
 }

@@ -1,33 +1,17 @@
 // ============================================
-// AI Parse → Save to Transaction
+// AI Parse → Save to Transaction (Post-Supabase)
 // POST /api/ai-parse/save-to-transaction
-// Converts completed AI job into a real transaction
-// Auto-detects company from AI-extracted nama_pt
 // ============================================
 
 import { NextResponse, type NextRequest } from "next/server";
-import { requireAuth } from "@/features/auth";
-import { PERMISSIONS } from "@/shared/lib/constants";
-import { createClient } from "@supabase/supabase-js";
+import { withDbContext } from "@/shared/lib/db/client";
 import type { StandardizedBkkData } from "@/shared/types";
-
-// Service-role client bypasses RLS — needed for cross-company inserts
-function getServiceClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-}
+import { getAuthSession } from "@/features/auth";
 
 export const dynamic = "force-dynamic";
 
-// Words to ignore when matching company names
 const IGNORE_WORDS = new Set(["PT", "PT.", "CV", "CV.", "TBKK", "TBK", "INC", "LLC", "LTD"]);
 
-/**
- * Fuzzy-match an AI-extracted company name against DB companies.
- * Extracts meaningful keywords from both strings and checks overlap.
- */
 function findMatchingCompanyId(
     aiName: string,
     companies: Array<{ id: string; name: string }>
@@ -48,8 +32,6 @@ function findMatchingCompanyId(
 
     for (const company of companies) {
         const dbTokens = normalizeAndTokenize(company.name);
-
-        // Count how many AI tokens match DB tokens (substring match)
         let matchCount = 0;
         for (const aiToken of aiTokens) {
             for (const dbToken of dbTokens) {
@@ -59,7 +41,6 @@ function findMatchingCompanyId(
                 }
             }
         }
-
         if (matchCount > 0) {
             const score = matchCount / Math.max(aiTokens.length, dbTokens.length);
             if (!bestMatch || score > bestMatch.score) {
@@ -67,151 +48,146 @@ function findMatchingCompanyId(
             }
         }
     }
-
-    // Require at least 1 keyword match
     return bestMatch ? bestMatch.id : null;
 }
 
 export async function POST(request: NextRequest) {
-    const { session, error } = await requireAuth(PERMISSIONS.AI_PARSE_UPLOAD);
-    if (error) return error;
+    const session = await getAuthSession();
 
-    const body = await request.json();
-    const { job_ids } = body as { job_ids: string[] };
+    if (!session) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (!job_ids || !Array.isArray(job_ids) || job_ids.length === 0) {
-        return NextResponse.json(
-            {
-                success: false,
-                error: { code: "VALIDATION_ERROR", message: "job_ids required" },
+    const userId = session.user.id;
+    const activeCompanyId = session.activeCompanyId;
+    const ownCompanyId = session.user.company_id;
+    const userRole = session.role;
+
+    try {
+        const { job_ids } = (await request.json()) as { job_ids: string[] };
+
+        if (!job_ids || !Array.isArray(job_ids) || job_ids.length === 0) {
+            return NextResponse.json({ error: "job_ids required" }, { status: 400 });
+        }
+
+        const createdIds: string[] = [];
+        const errors: Array<{ job_id: string; message: string }> = [];
+
+        // Use withDbContext to ensure RLS is enforced during the whole process
+        await withDbContext(userId, activeCompanyId, userRole, ownCompanyId, async (client) => {
+            // 1. Fetch current user and all companies (pre-loop)
+            // Note: withDbContext already handles BEGIN/COMMIT for the callback,
+            // but since we are doing manual transactions inside the loop, we must be careful.
+            // Actually, it's better to let withDbContext wrap the outer scope.
+            
+            const userRes = await client.query("SELECT full_name FROM users WHERE id = $1", [userId]);
+            const userName = userRes.rows[0]?.full_name ?? "Unknown";
+
+            const companiesRes = await client.query(
+                "SELECT id, name FROM companies WHERE is_active = true"
+            );
+            const allCompanies = companiesRes.rows;
+
+            for (const jobId of job_ids) {
+                try {
+                    // Manual sub-transaction using SAVEPOINT if needed, 
+                    // but here we just execute within the same transaction for simplicity.
+                    // If one fails, we want to know, but we don't necessarily want to rollback everything.
+                    // However, withDbContext wraps the whole callback in BEGIN/COMMIT.
+                    // To handle individual job failure, we'll use a nested transaction pattern.
+
+                    await client.query(`SAVEPOINT job_${jobId.replace(/-/g, '_')}`);
+
+                    // 2. Fetch the completed job
+                    const jobRes = await client.query(
+                        "SELECT * FROM ai_processing_jobs WHERE id = $1 AND status = $2",
+                        [jobId, "completed"]
+                    );
+
+                    if (jobRes.rowCount === 0) {
+                        throw new Error("Job tidak ditemukan atau belum selesai");
+                    }
+
+                    const job = jobRes.rows[0];
+                    const std = job.standardized_data as StandardizedBkkData;
+
+                    // 3. Match Company
+                    const aiCompanyName = std.header.company_name || "";
+                    const matchedCompanyId = findMatchingCompanyId(aiCompanyName, allCompanies);
+                    const targetCompanyId = matchedCompanyId || activeCompanyId;
+
+                    // 4. Generate BKK Number
+                    const numRes = await client.query(
+                        "SELECT generate_bkk_number($1, $2) as bkk_number",
+                        [targetCompanyId, std.header.transaction_type || "BKK"]
+                    );
+                    const bkkNumber = numRes.rows[0].bkk_number;
+
+                    // 5. Insert Transaction
+                    const txRes = await client.query(
+                        `INSERT INTO transactions (
+                            company_id, created_by, type, payment_type, transaction_date, 
+                            total_amount, purpose, division, department, paid_to_name, 
+                            bkk_number, received_by, paid_by, approved_by, note, status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                        RETURNING id`,
+                        [
+                            targetCompanyId,
+                            userId,
+                            std.header.transaction_type || "BKK",
+                            std.header.payment_type || "BANK",
+                            std.header.transaction_date,
+                            std.info.total_amount,
+                            std.info.purpose,
+                            std.info.division || "FINANCE",
+                            std.info.department || "GENERAL",
+                            userName,
+                            bkkNumber,
+                            userName,
+                            std.signatories.paid_by || "BU NURUL",
+                            std.signatories.approved_by || "PAK NOVI",
+                            `Auto-generated from AI Parser (Job: ${jobId})`,
+                            "draft",
+                        ]
+                    );
+                    const transactionId = txRes.rows[0].id;
+
+                    // 6. Insert Items
+                    if (std.rows && std.rows.length > 0) {
+                        for (const row of std.rows) {
+                            await client.query(
+                                `INSERT INTO transaction_items (transaction_id, item_order, description, account_code, amount)
+                                 VALUES ($1, $2, $3, $4, $5)`,
+                                [transactionId, row.no, row.description, row.account_code || "", row.amount]
+                            );
+                        }
+                    }
+
+                    // 7. Mark job as exported
+                    await client.query(
+                        "UPDATE ai_processing_jobs SET status = $1, updated_at = now() WHERE id = $2",
+                        ["exported", jobId]
+                    );
+
+                    await client.query(`RELEASE SAVEPOINT job_${jobId.replace(/-/g, '_')}`);
+                    createdIds.push(transactionId);
+                } catch (innerError: any) {
+                    await client.query(`ROLLBACK TO SAVEPOINT job_${jobId.replace(/-/g, '_')}`);
+                    errors.push({ job_id: jobId, message: innerError.message });
+                }
+            }
+        });
+
+        return NextResponse.json({
+            success: true,
+            data: {
+                created_transaction_ids: createdIds,
+                total_created: createdIds.length,
+                errors: errors.length > 0 ? errors : undefined,
             },
-            { status: 400 }
-        );
+        });
+    } catch (error: any) {
+        console.error("Save to Transaction Error:", error.message);
+        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
-
-    const supabase = getServiceClient();
-    const createdIds: string[] = [];
-    const errors: Array<{ job_id: string; message: string }> = [];
-
-    // Fetch logged-in user's full_name
-    const { data: currentUser } = await supabase
-        .from("users")
-        .select("full_name")
-        .eq("id", session.user.id)
-        .single();
-    const userName = currentUser?.full_name ?? "";
-
-    // Fetch all companies for matching
-    const { data: allCompanies } = await supabase
-        .from("companies")
-        .select("id, name")
-        .eq("is_active", true);
-
-    for (const jobId of job_ids) {
-        // 1. Fetch the completed job
-        const { data: job, error: fetchErr } = await supabase
-            .from("ai_processing_jobs")
-            .select("*")
-            .eq("id", jobId)
-            .eq("status", "completed")
-            .single();
-
-        if (fetchErr || !job) {
-            errors.push({ job_id: jobId, message: "Job tidak ditemukan atau belum selesai" });
-            continue;
-        }
-
-        const std = job.standardized_data as StandardizedBkkData | null;
-        if (!std) {
-            errors.push({ job_id: jobId, message: "Data standar tidak tersedia" });
-            continue;
-        }
-
-        // 2. Auto-detect company from AI-extracted company name
-        const aiCompanyName = std.header.company_name || "";
-        const matchedCompanyId = allCompanies
-            ? findMatchingCompanyId(aiCompanyName, allCompanies)
-            : null;
-        const targetCompanyId = matchedCompanyId || session.activeCompanyId;
-
-        // 3. Generate BKK number for the target company
-        const { data: bkkNumber, error: numErr } = await supabase.rpc(
-            "generate_bkk_number",
-            {
-                p_company_id: targetCompanyId,
-                p_type: std.header.transaction_type || "BKK",
-            }
-        );
-
-        if (numErr) {
-            errors.push({ job_id: jobId, message: `Gagal generate nomor: ${numErr.message}` });
-            continue;
-        }
-
-        // 4. Insert transaction — paid_to and received_by from logged-in user
-        const { data: transaction, error: txErr } = await supabase
-            .from("transactions")
-            .insert({
-                company_id: targetCompanyId,
-                created_by: session.user.id,
-                type: std.header.transaction_type || "BKK",
-                payment_type: std.header.payment_type || "BANK",
-                transaction_date: std.header.transaction_date,
-                total_amount: std.info.total_amount,
-                purpose: std.info.purpose,
-                division: std.info.division || "FINANCE",
-                department: std.info.department || "GENERAL",
-                paid_to_name: userName,
-                bkk_number: bkkNumber as string,
-                received_by: userName,
-                paid_by: std.signatories.paid_by || "BU NURUL",
-                approved_by: std.signatories.approved_by || "PAK NOVI",
-                note: `Auto-generated from AI Parser (Job: ${jobId})`,
-                status: "draft",
-            })
-            .select("id")
-            .single();
-
-        if (txErr || !transaction) {
-            errors.push({ job_id: jobId, message: `Gagal simpan transaksi: ${txErr?.message}` });
-            continue;
-        }
-
-        // 5. Insert transaction items
-        if (std.rows.length > 0) {
-            const { error: itemsErr } = await supabase
-                .from("transaction_items")
-                .insert(
-                    std.rows.map((row) => ({
-                        transaction_id: transaction.id,
-                        item_order: row.no,
-                        description: row.description,
-                        account_code: row.account_code || "",
-                        amount: row.amount,
-                    }))
-                );
-
-            if (itemsErr) {
-                errors.push({ job_id: jobId, message: `Items gagal: ${itemsErr.message}` });
-                continue;
-            }
-        }
-
-        // 6. Mark AI job as exported
-        await supabase
-            .from("ai_processing_jobs")
-            .update({ status: "exported" as string })
-            .eq("id", jobId);
-
-        createdIds.push(transaction.id);
-    }
-
-    return NextResponse.json({
-        success: true,
-        data: {
-            created_transaction_ids: createdIds,
-            total_created: createdIds.length,
-            errors: errors.length > 0 ? errors : undefined,
-        },
-    });
 }

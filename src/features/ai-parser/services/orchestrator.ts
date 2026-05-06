@@ -1,22 +1,16 @@
 // ============================================
-// Inngest Orchestrator — AI Parse Worker
+// Inngest Orchestrator — AI Parse Worker (Post-Supabase)
 // Unified single-call extraction pipeline
 // ============================================
 
 import { inngest } from "@/shared/lib/inngest";
-import { createClient } from "@supabase/supabase-js";
+import { query as systemQuery } from "@/shared/lib/db/client";
+import { s3Client, BUCKET_NAME } from "@/shared/lib/storage/s3-client";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { extractWithGemini } from "./gemini-extractor";
 import { mapUnifiedToBkk } from "./data-mapper";
 import { unifiedExtractionSchema } from "../types";
 import type { StandardizedBkkData, DocumentType } from "@/shared/types";
-
-// Service-role client for background worker (bypasses RLS)
-function getServiceClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-}
 
 export const parseDocument = inngest.createFunction(
     {
@@ -27,36 +21,39 @@ export const parseDocument = inngest.createFunction(
     { event: "ai/parse.requested" },
     async ({ event, step }) => {
         const { job_id, file_path, company_id } = event.data;
-        const supabase = getServiceClient();
 
         // Step 1: Update status to processing
         await step.run("update-status-processing", async () => {
-            await supabase
-                .from("ai_processing_jobs")
-                .update({
-                    status: "processing",
-                    started_at: new Date().toISOString(),
-                })
-                .eq("id", job_id);
+            await systemQuery(
+                "UPDATE ai_processing_jobs SET status = $1, started_at = $2, updated_at = now() WHERE id = $3",
+                ["processing", new Date().toISOString(), job_id]
+            );
         });
 
-        // Step 2: Download image from storage
+        // Step 2: Download image from storage (S3)
         const imageData = await step.run("download-image", async () => {
-            const { data, error } = await supabase.storage
-                .from("uploads")
-                .download(file_path);
+            try {
+                const s3Res = await s3Client.send(
+                    new GetObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: file_path,
+                    })
+                );
 
-            if (error || !data) {
-                throw new Error(`Failed to download file: ${error?.message}`);
+                if (!s3Res.Body) {
+                    throw new Error("Empty body from S3");
+                }
+
+                // Convert stream to buffer
+                const buffer = Buffer.from(await s3Res.Body.transformToByteArray());
+                const base64 = buffer.toString("base64");
+                const mimeType = file_path.endsWith(".png") ? "image/png" : "image/jpeg";
+
+                return { base64, mimeType };
+            } catch (error: any) {
+                console.error("S3 Download Error:", error.message);
+                throw new Error(`Failed to download file from S3: ${error.message}`);
             }
-
-            const buffer = Buffer.from(await data.arrayBuffer());
-            const base64 = buffer.toString("base64");
-            const mimeType = file_path.endsWith(".png")
-                ? "image/png"
-                : "image/jpeg";
-
-            return { base64, mimeType };
         });
 
         // Step 3: Extract with unified prompt (single API call)
@@ -67,10 +64,7 @@ export const parseDocument = inngest.createFunction(
 
             try {
                 // Single unified Gemini call — AI classifies + extracts
-                const rawResult = await extractWithGemini(
-                    imageData.base64,
-                    imageData.mimeType
-                );
+                const rawResult = await extractWithGemini(imageData.base64, imageData.mimeType);
                 rawOutput = rawResult;
 
                 // Validate against unified schema
@@ -94,29 +88,43 @@ export const parseDocument = inngest.createFunction(
         // Step 4: Persist results
         await step.run("persist-results", async () => {
             if (extraction.standardizedData) {
-                await supabase
-                    .from("ai_processing_jobs")
-                    .update({
-                        status: "completed",
-                        document_type: extraction.documentType,
-                        standardized_data: extraction.standardizedData,
-                        total_amount: extraction.standardizedData.info.total_amount,
-                        raw_ai_output: extraction.rawOutput,
-                        completed_at: new Date().toISOString(),
-                    })
-                    .eq("id", job_id);
+                await systemQuery(
+                    `UPDATE ai_processing_jobs 
+                     SET status = $1, 
+                         document_type = $2, 
+                         standardized_data = $3, 
+                         total_amount = $4, 
+                         raw_ai_output = $5, 
+                         completed_at = now(),
+                         updated_at = now()
+                     WHERE id = $6`,
+                    [
+                        "completed",
+                        extraction.documentType,
+                        extraction.standardizedData,
+                        extraction.standardizedData.info.total_amount,
+                        extraction.rawOutput,
+                        job_id,
+                    ]
+                );
             } else {
-                await supabase
-                    .from("ai_processing_jobs")
-                    .update({
-                        status: "failed",
-                        document_type: "TIDAK_DIKENALI",
-                        error_message:
-                            "Dokumen tidak dikenali. Tidak cocok dengan format BPN maupun Bukti Transfer Bank.",
-                        raw_ai_output: extraction.rawOutput,
-                        completed_at: new Date().toISOString(),
-                    })
-                    .eq("id", job_id);
+                await systemQuery(
+                    `UPDATE ai_processing_jobs 
+                     SET status = $1, 
+                         document_type = $2, 
+                         error_message = $3, 
+                         raw_ai_output = $4, 
+                         completed_at = now(),
+                         updated_at = now()
+                     WHERE id = $5`,
+                    [
+                        "failed",
+                        "TIDAK_DIKENALI",
+                        "Dokumen tidak dikenali. Tidak cocok dengan format BPN maupun Bukti Transfer Bank.",
+                        extraction.rawOutput,
+                        job_id,
+                    ]
+                );
             }
         });
 

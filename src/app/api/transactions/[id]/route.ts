@@ -21,11 +21,11 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/transactions/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
-    const { error } = await requireAuth(PERMISSIONS.TRANSACTION_READ);
+    const { session, error } = await requireAuth(PERMISSIONS.TRANSACTION_READ);
     if (error) return error;
 
     const { id } = await context.params;
-    const result = await getTransaction(id);
+    const result = await getTransaction(session, id);
 
     return NextResponse.json(result, {
         status: result.success ? 200 : 404,
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
 // PATCH /api/transactions/[id]
 export async function PATCH(request: NextRequest, context: RouteContext) {
-    const { error } = await requireAuth(PERMISSIONS.TRANSACTION_UPDATE);
+    const { session, error } = await requireAuth(PERMISSIONS.TRANSACTION_UPDATE);
     if (error) return error;
 
     const { id } = await context.params;
@@ -55,17 +55,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
     }
 
-    const result = await updateTransaction(id, parsed.data);
+    const result = await updateTransaction(session, id, parsed.data);
     return NextResponse.json(result, { status: result.success ? 200 : 500 });
 }
 
 // DELETE /api/transactions/[id]
 export async function DELETE(request: NextRequest, context: RouteContext) {
-    const { error } = await requireAuth(PERMISSIONS.TRANSACTION_DELETE);
+    const { session, error } = await requireAuth(PERMISSIONS.TRANSACTION_DELETE);
     if (error) return error;
 
     const { id } = await context.params;
-    const result = await softDeleteTransaction(id);
+    const result = await softDeleteTransaction(session, id);
 
     return NextResponse.json(result, { status: result.success ? 200 : 500 });
 }

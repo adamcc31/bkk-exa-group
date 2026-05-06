@@ -1,18 +1,11 @@
 // ============================================
-// Admin Users Service — CRUD Operations
+// Admin Users Service — CRUD Operations (Post-Supabase)
 // ============================================
 
-import { createSupabaseServerClient } from "@/shared/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
+import { withDbContext, query as systemQuery } from "@/shared/lib/db/client";
+import { createQueryBuilder } from "@/shared/lib/db/query-builder";
+import * as authService from "@/features/auth/services/auth.service";
 import type { AuthSession, User, ApiResponse } from "@/shared/types";
-
-/** Service-role client for admin operations (bypasses RLS, has auth.admin access) */
-function getServiceClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-}
 
 interface CreateUserInput {
     email: string;
@@ -29,146 +22,184 @@ interface UpdateUserInput {
     is_active?: boolean;
 }
 
+/**
+ * Lists all users with their role and company details
+ */
 export async function listUsers(
     session: AuthSession,
     query: { page?: number; pageSize?: number; company_id?: string; search?: string }
 ): Promise<ApiResponse<User[]>> {
-    const supabase = await createSupabaseServerClient();
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    return await withDbContext(session.user.id, session.activeCompanyId, session.role, session.user.company_id, async (client) => {
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 20;
+        const offset = (page - 1) * pageSize;
 
-    let qb = supabase
-        .from("users")
-        .select("*, role:roles(*), company:companies(*)", { count: "exact" })
-        .order("full_name")
-        .range(from, to);
+        const qb = createQueryBuilder();
 
-    if (query.company_id) {
-        qb = qb.eq("company_id", query.company_id);
-    }
+        if (query.company_id) {
+            qb.where("u.company_id = $", query.company_id);
+        }
 
-    // Search by full_name — case-insensitive partial match (uses pg_trgm GIN index)
-    if (query.search && query.search.trim().length > 0) {
-        qb = qb.ilike("full_name", `%${query.search.trim()}%`);
-    }
+        if (query.search && query.search.trim().length > 0) {
+            qb.where("u.full_name ILIKE $", `%${query.search.trim()}%`);
+        }
 
-    const { data, error, count } = await qb;
+        const { whereClause, params, nextParamIndex } = qb.build();
 
-    if (error) {
-        return { success: false, error: { code: "DB_ERROR", message: error.message } };
-    }
+        // 1. Get total count
+        const countRes = await client.query(
+            `SELECT COUNT(*)::INT as total FROM users u ${whereClause}`,
+            params
+        );
+        const total = countRes.rows[0].total;
 
-    return {
-        success: true,
-        data: (data as unknown as User[]) ?? [],
-        meta: {
-            page,
-            pageSize,
-            total: count ?? 0,
-            totalPages: Math.ceil((count ?? 0) / pageSize),
-        },
-    };
+        // 2. Get paginated data
+        const dataRes = await client.query(
+            `SELECT u.*, 
+                row_to_json(r.*) as role,
+                row_to_json(c.*) as company
+             FROM users u
+             JOIN roles r ON u.role_id = r.id
+             JOIN companies c ON u.company_id = c.id
+             ${whereClause}
+             ORDER BY u.full_name ASC
+             LIMIT $${nextParamIndex} OFFSET $${nextParamIndex + 1}`,
+            [...params, pageSize, offset]
+        );
+
+        return {
+            success: true,
+            data: dataRes.rows as unknown as User[],
+            meta: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.ceil(total / pageSize),
+            },
+        };
+    });
 }
 
+/**
+ * Creates a new user (Auth + Profile)
+ * Uses the existing authService.register logic for atomicity
+ */
 export async function createUser(
     session: AuthSession,
     input: CreateUserInput
 ): Promise<ApiResponse<User>> {
-    const supabase = getServiceClient();
+    try {
+        // Reuse register logic which is already atomic and handles both tables
+        const { user: newUser } = await authService.register(
+            input.email,
+            input.password,
+            input.full_name,
+            input.company_id,
+            input.role_id
+        );
 
-    // 0. Check if email already exists in users table
-    const { data: existing } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", input.email)
-        .single();
+        // Fetch complete user object with relations for the UI
+        const finalRes = await systemQuery(
+            `SELECT u.*, row_to_json(r.*) as role, row_to_json(c.*) as company
+             FROM users u
+             JOIN roles r ON u.role_id = r.id
+             JOIN companies c ON u.company_id = c.id
+             WHERE u.id = $1`,
+            [newUser.id]
+        );
 
-    if (existing) {
+        return { success: true, data: finalRes.rows[0] as unknown as User };
+    } catch (error: any) {
+        console.error("Create User Error:", error.message);
+        
+        const isDuplicate = error.message.includes("unique constraint") || error.message.includes("already exists");
+        
         return {
             success: false,
             error: {
-                code: "DUPLICATE_EMAIL",
-                message: "Email sudah terdaftar. Gunakan email lain.",
+                code: isDuplicate ? "DUPLICATE_EMAIL" : "CREATE_FAILED",
+                message: isDuplicate 
+                    ? "Email sudah terdaftar. Gunakan email lain." 
+                    : "Gagal membuat user baru.",
             },
         };
     }
-
-    // 1. Create auth user via Supabase Admin API
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: input.email,
-        password: input.password,
-        email_confirm: true,
-        user_metadata: { full_name: input.full_name },
-    });
-
-    if (authError || !authData.user) {
-        return {
-            success: false,
-            error: {
-                code: "AUTH_CREATE_FAILED",
-                message: authError?.message ?? "Failed to create auth user",
-            },
-        };
-    }
-
-    // 2. Upsert profile into users table (since a database trigger might have already created a default row)
-    const { data, error } = await supabase
-        .from("users")
-        .upsert({
-            id: authData.user.id,
-            email: input.email,
-            full_name: input.full_name,
-            company_id: input.company_id,
-            role_id: input.role_id,
-            created_by: session.user.id,
-        })
-        .select("*, role:roles(*), company:companies(*)")
-        .single();
-
-    if (error) {
-        // Cleanup: delete the auth user if profile insert fails
-        await supabase.auth.admin.deleteUser(authData.user.id);
-        return { success: false, error: { code: "CREATE_FAILED", message: error.message } };
-    }
-
-    return { success: true, data: data as unknown as User };
 }
 
+/**
+ * Updates an existing user profile
+ */
 export async function updateUser(
+    session: AuthSession,
     id: string,
     input: UpdateUserInput
 ): Promise<ApiResponse<User>> {
-    const supabase = await createSupabaseServerClient();
+    return await withDbContext(session.user.id, session.activeCompanyId, session.role, session.user.company_id, async (client) => {
+        const UPDATABLE_FIELDS: (keyof UpdateUserInput)[] = [
+            "full_name",
+            "company_id",
+            "role_id",
+            "is_active",
+        ];
 
-    const { data, error } = await supabase
-        .from("users")
-        .update(input)
-        .eq("id", id)
-        .select("*, role:roles(*), company:companies(*)")
-        .single();
+        const fields: string[] = [];
+        const values: any[] = [];
+        let i = 1;
 
-    if (error) {
-        return { success: false, error: { code: "UPDATE_FAILED", message: error.message } };
-    }
+        for (const field of UPDATABLE_FIELDS) {
+            if (input[field] !== undefined) {
+                fields.push(`${field} = $${i++}`);
+                values.push(input[field]);
+            }
+        }
 
-    return { success: true, data: data as unknown as User };
+        if (fields.length === 0) {
+            throw new Error("No fields to update");
+        }
+
+        values.push(id);
+        await client.query(
+            `UPDATE users SET ${fields.join(", ")}, updated_at = now() WHERE id = $${i}`,
+            values
+        );
+
+        const finalRes = await client.query(
+            `SELECT u.*, row_to_json(r.*) as role, row_to_json(c.*) as company
+             FROM users u
+             JOIN roles r ON u.role_id = r.id
+             JOIN companies c ON u.company_id = c.id
+             WHERE u.id = $1`,
+            [id]
+        );
+
+        return { success: true, data: finalRes.rows[0] as unknown as User };
+    });
 }
 
+/**
+ * Toggles user active status
+ */
 export async function deactivateUser(
+    session: AuthSession,
     id: string
 ): Promise<ApiResponse<{ deactivated: boolean }>> {
-    const supabase = await createSupabaseServerClient();
+    return await withDbContext(session.user.id, session.activeCompanyId, session.role, session.user.company_id, async (client) => {
+        // 1. Mark user as inactive
+        const res = await client.query(
+            "UPDATE users SET is_active = false, updated_at = now() WHERE id = $1",
+            [id]
+        );
 
-    const { error } = await supabase
-        .from("users")
-        .update({ is_active: false })
-        .eq("id", id);
+        if (res.rowCount === 0) {
+            return {
+                success: false,
+                error: { code: "NOT_FOUND", message: "User not found" },
+            };
+        }
 
-    if (error) {
-        return { success: false, error: { code: "DELETE_FAILED", message: error.message } };
-    }
+        // 2. Immediate logout: Force clear all refresh tokens for this user
+        await client.query("DELETE FROM public.refresh_tokens WHERE user_id = $1", [id]);
 
-    return { success: true, data: { deactivated: true } };
+        return { success: true, data: { deactivated: true } };
+    });
 }

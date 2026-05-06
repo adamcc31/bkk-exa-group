@@ -1,11 +1,10 @@
 // ============================================
-// Login Page — BKK Automatic V3
+// Login Page — BKK Automatic V3 (Post-Supabase)
 // ============================================
 
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { createSupabaseBrowserClient } from "@/shared/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -20,20 +19,28 @@ export default function LoginPage() {
         setError(null);
         setLoading(true);
 
-        const supabase = createSupabaseBrowserClient();
-        const { error: authError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
+        try {
+            const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ email, password }),
+            });
 
-        if (authError) {
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || "Login failed");
+            }
+
+            // Success: redirect to dashboard
+            router.push("/");
+            router.refresh();
+        } catch (authError: any) {
             setError(authError.message);
             setLoading(false);
-            return;
         }
-
-        router.push("/");
-        router.refresh();
     }
 
     return (

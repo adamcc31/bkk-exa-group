@@ -1,5 +1,5 @@
 // ============================================
-// Dashboard Shell — Client Wrapper
+// Dashboard Shell — Client Wrapper (Post-Supabase)
 // Manages company switching and auth state
 // ============================================
 
@@ -8,7 +8,6 @@
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Navbar } from "./navbar";
-import { createSupabaseBrowserClient } from "@/shared/lib/supabase/client";
 import type { Company, UserRole } from "@/shared/types";
 
 interface DashboardShellProps {
@@ -31,18 +30,35 @@ export function DashboardShell({
     const router = useRouter();
 
     async function handleCompanySwitch(companyId: string) {
-        const supabase = createSupabaseBrowserClient();
-        await supabase.auth.updateUser({
-            data: { active_company_id: companyId },
-        });
-        router.refresh();
+        try {
+            const response = await fetch("/api/auth/switch-company", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ companyId }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || "Failed to switch company");
+            }
+
+            router.refresh();
+        } catch (err) {
+            console.error("Company switch failed:", err);
+            alert("Gagal mengganti perusahaan");
+        }
     }
 
     async function handleLogout() {
-        const supabase = createSupabaseBrowserClient();
-        await supabase.auth.signOut();
-        router.push("/login");
-        router.refresh();
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+            router.push("/login");
+            router.refresh();
+        } catch (err) {
+            console.error("Logout failed:", err);
+            // Fallback: forced redirect
+            window.location.href = "/login";
+        }
     }
 
     return (

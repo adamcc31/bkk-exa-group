@@ -94,6 +94,8 @@ export const DEPARTMENTS = [
 export const PAID_BY_OPTIONS = [
     "BU NURUL",
     "PAK NOVI",
+    "Bu Sabrina",
+    "MBA RINA",
 ] as const;
 
 export const APPROVED_BY_OPTIONS = [

@@ -77,7 +77,7 @@ const s = StyleSheet.create({
         justifyContent: "center",
     },
     titleRightLine: {
-        fontSize: 6.5,
+        fontSize: 8,
         lineHeight: 1.6,
     },
 
@@ -100,15 +100,15 @@ const s = StyleSheet.create({
     },
     infoLabel: {
         width: 65,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     infoSep: {
         width: 8,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     infoValue: {
         flex: 1,
-        fontSize: 6.5,
+        fontSize: 8,
         fontFamily: "Times-Bold",
     },
 
@@ -128,28 +128,28 @@ const s = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         borderRight: B,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     cellDesc: {
         width: GRID_RATIOS.DESCRIPTION,
         justifyContent: "center",
         paddingHorizontal: 4,
         borderRight: B,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     cellAc: {
         width: GRID_RATIOS.ACCOUNT_CODE,
         justifyContent: "center",
         alignItems: "center",
         borderRight: B,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     cellAmount: {
         width: GRID_RATIOS.AMOUNT,
         justifyContent: "center",
         alignItems: "flex-end",
         paddingRight: 4,
-        fontSize: 6.5,
+        fontSize: 8,
     },
     thText: {
         fontSize: 6,
@@ -193,7 +193,7 @@ const s = StyleSheet.create({
         borderRight: B,
     },
     sigLabel: {
-        fontSize: 6.5,
+        fontSize: 8,
         fontFamily: "Times-Bold",
     },
     sigName: {
@@ -206,9 +206,21 @@ interface BkkPdfDocumentProps {
     data: StandardizedBkkData;
 }
 
-function formatDateDDMMYYYY(dateStr: string): string {
+function formatDateDDMMYYYY(dateInput: string | Date): string {
+    if (!dateInput) return "—";
+
+    // Handle Date object
+    const dateStr =
+        dateInput instanceof Date
+            ? dateInput.toISOString().split("T")[0]
+            : String(dateInput);
+
+    // Expected format: YYYY-MM-DD
     const parts = dateStr.split("-");
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    if (parts.length >= 3) {
+        // Just take the first 3 parts if there's time info
+        return `${parts[2].substring(0, 2)}/${parts[1]}/${parts[0]}`;
+    }
     return dateStr;
 }
 

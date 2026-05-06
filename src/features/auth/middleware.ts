@@ -1,9 +1,10 @@
 // ============================================
-// RBAC Middleware & Permission Guard
+// RBAC Middleware & Permission Guard (Post-Supabase)
 // Features / Auth — BKK Automatic V3
 // ============================================
 
-import { createSupabaseServerClient } from "@/shared/lib/supabase/server";
+import { headers } from "next/headers";
+import { query as systemQuery } from "@/shared/lib/db/client";
 import { type Permission } from "@/shared/lib/constants";
 import { hasPermission } from "@/shared/lib/permissions";
 import type { UserRole, User, AuthSession } from "@/shared/types";
@@ -14,32 +15,29 @@ export { hasPermission };
 
 /**
  * Get the current authenticated session with user profile & role.
+ * Uses headers set by the global Next.js middleware.
  * Returns null if not authenticated.
  */
 export async function getAuthSession(): Promise<AuthSession | null> {
-    const supabase = await createSupabaseServerClient();
+    const headerList = await headers();
+    const userId = headerList.get("x-user-id");
+    const activeCompanyId = headerList.get("x-active-company-id");
+    const role = headerList.get("x-user-role");
 
-    const {
-        data: { user: authUser },
-    } = await supabase.auth.getUser();
+    if (!userId || !activeCompanyId || !role) return null;
 
-    if (!authUser) return null;
+    // Fetch user profile from DB
+    const res = await systemQuery(
+        `SELECT u.*, row_to_json(r.*) as role 
+         FROM public.users u 
+         JOIN public.roles r ON u.role_id = r.id 
+         WHERE u.id = $1`,
+        [userId]
+    );
 
-    // Fetch user profile with role
-    const { data: profile } = await supabase
-        .from("users")
-        .select("*, role:roles(*)")
-        .eq("id", authUser.id)
-        .single();
+    if (res.rowCount === 0) return null;
 
-    if (!profile) return null;
-
-    const user = profile as unknown as User;
-    const role = user.role?.name ?? "staff";
-
-    // Active company: use metadata override (for admin/finance switching) or own company
-    const activeCompanyId =
-        (authUser.user_metadata?.active_company_id as string) ?? user.company_id;
+    const user = res.rows[0] as User;
 
     return {
         user,

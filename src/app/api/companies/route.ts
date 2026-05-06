@@ -1,31 +1,39 @@
 // ============================================
-// Companies API — List companies
+// Companies API — List companies (Post-Supabase)
 // GET /api/companies
 // ============================================
 
-import { NextResponse } from "next/server";
-import { requireAuth } from "@/features/auth";
-import { createSupabaseServerClient } from "@/shared/lib/supabase/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { withDbContext } from "@/shared/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-    const { error } = await requireAuth();
-    if (error) return error;
+export async function GET(request: NextRequest) {
+    const userId = request.headers.get("x-user-id");
+    const activeCompanyId = request.headers.get("x-active-company-id");
+    const role = request.headers.get("x-user-role");
 
-    const supabase = await createSupabaseServerClient();
-    const { data, error: dbError } = await supabase
-        .from("companies")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-    if (dbError) {
-        return NextResponse.json(
-            { success: false, error: { code: "DB_ERROR", message: dbError.message } },
-            { status: 500 }
-        );
+    if (!userId || !role) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json({ success: true, data });
+    try {
+        // Use database context for RLS-compliant listing
+        const data = await withDbContext(
+            userId,
+            activeCompanyId,
+            role,
+            request.headers.get("x-own-company-id"),
+            async (client) => {
+                const res = await client.query(
+                "SELECT * FROM companies WHERE is_active = true ORDER BY name ASC"
+            );
+            return res.rows;
+        });
+
+        return NextResponse.json({ success: true, data });
+    } catch (error: any) {
+        console.error("Companies Route Error:", error.message);
+        return NextResponse.json({ error: "Failed to fetch companies" }, { status: 500 });
+    }
 }

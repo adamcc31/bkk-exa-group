@@ -16,11 +16,11 @@ export default async function TransactionDetailPage({
 }: {
     params: Promise<{ id: string }>;
 }) {
-    const { error } = await requireAuth(PERMISSIONS.TRANSACTION_READ);
-    if (error) redirect("/login");
+    const { session, error: authError } = await requireAuth(PERMISSIONS.TRANSACTION_READ);
+    if (authError) redirect("/login");
 
     const { id } = await params;
-    const result = await getTransaction(id);
+    const result = await getTransaction(session, id);
 
     if (!result.success || !result.data) {
         redirect("/transactions");

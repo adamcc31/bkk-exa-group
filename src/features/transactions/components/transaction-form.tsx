@@ -57,6 +57,7 @@ export default function TransactionForm({ initialData }: TransactionFormProps) {
         })) ?? [{ ...EMPTY_ROW }]
     );
 
+    const [activeCompanyId, setActiveCompanyId] = useState<string>(initialData?.company_id ?? "");
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -67,10 +68,14 @@ export default function TransactionForm({ initialData }: TransactionFormProps) {
             try {
                 const res = await fetch("/api/me");
                 const data = await res.json();
-                if (data.success && data.data.role === "staff" && data.data.userName) {
-                    const name = data.data.userName;
-                    if (!paidToName) setPaidToName(name);
-                    if (!receivedBy) setReceivedBy(name);
+                if (data.success) {
+                    if (data.data.activeCompanyId) setActiveCompanyId(data.data.activeCompanyId);
+                    
+                    if (data.data.role === "staff" && data.data.userName) {
+                        const name = data.data.userName;
+                        if (!paidToName) setPaidToName(name);
+                        if (!receivedBy) setReceivedBy(name);
+                    }
                 }
             } catch {
                 // Silently fail — not critical
@@ -412,7 +417,15 @@ export default function TransactionForm({ initialData }: TransactionFormProps) {
                         <div>
                             <label className={labelClass}>Dibayar oleh</label>
                             <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} className={selectClass}>
-                                {PAID_BY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                {PAID_BY_OPTIONS
+                                    .filter(o => {
+                                        if (o === "BU SABRINA") {
+                                            return activeCompanyId === "a1000000-0000-0000-0000-000000000005";
+                                        }
+                                        return true;
+                                    })
+                                    .map((o) => <option key={o} value={o}>{o}</option>)
+                                }
                             </select>
                         </div>
                         <div>
