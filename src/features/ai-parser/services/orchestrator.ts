@@ -14,7 +14,7 @@ import type { StandardizedBkkData, DocumentType } from "@/shared/types";
 
 /**
  * Inngest Function: parseDocument
- * Standardized for Inngest v3 (3 arguments: config, trigger, handler)
+ * Standardized for Inngest v3.54+ (2 arguments: config and trigger/handler object)
  */
 export const parseDocument = inngest.createFunction(
     {
@@ -22,7 +22,9 @@ export const parseDocument = inngest.createFunction(
         concurrency: { limit: 3 },
         retries: 2,
     },
-    { event: "ai/parse.requested" },
+    {
+        event: "ai/parse.requested",
+    },
     async ({ event, step }) => {
         const { job_id, file_path } = event.data;
 

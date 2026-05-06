@@ -5,9 +5,9 @@ import { getJWTPayload } from "@/shared/lib/auth/jwt";
 const PROTECTED_PATHS = ["/admin", "/ai-parser", "/reports", "/transactions"];
 
 /**
- * Next.js Middleware for Authentication and Context Forwarding
+ * Next.js Proxy for Authentication and Context Forwarding
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const accessToken = request.cookies.get("access_token")?.value;
     const payload = accessToken ? await getJWTPayload(accessToken) : null;
 
