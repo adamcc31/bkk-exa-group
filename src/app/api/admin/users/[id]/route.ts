@@ -12,22 +12,22 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-    const { error } = await requireAuth(PERMISSIONS.USER_UPDATE);
+    const { session, error } = await requireAuth(PERMISSIONS.USER_UPDATE);
     if (error) return error;
 
     const { id } = await context.params;
     const body = await request.json();
-    const result = await updateUser(id, body);
+    const result = await updateUser(session, id, body);
 
     return NextResponse.json(result);
 }
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
-    const { error } = await requireAuth(PERMISSIONS.USER_DELETE);
+    const { session, error } = await requireAuth(PERMISSIONS.USER_DELETE);
     if (error) return error;
 
     const { id } = await context.params;
-    const result = await deactivateUser(id);
+    const result = await deactivateUser(session, id);
 
     return NextResponse.json(result);
 }
