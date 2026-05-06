@@ -8,10 +8,19 @@ const PROTECTED_PATHS = ["/admin", "/ai-parser", "/reports", "/transactions"];
  * Next.js Proxy for Authentication and Context Forwarding
  */
 export async function proxy(request: NextRequest) {
-    const accessToken = request.cookies.get("access_token")?.value;
-    const payload = accessToken ? await getJWTPayload(accessToken) : null;
-
     const { pathname } = request.nextUrl;
+    console.log(`[Proxy] Request: ${request.method} ${pathname}`);
+
+    const accessToken = request.cookies.get("access_token")?.value;
+    let payload = null;
+    
+    if (accessToken) {
+        try {
+            payload = await getJWTPayload(accessToken);
+        } catch (e) {
+            console.error(`[Proxy] Token validation failed:`, e);
+        }
+    }
 
     // 1. Redirect logic for authenticated users at /login
     if (payload && pathname === "/login") {
@@ -27,10 +36,11 @@ export async function proxy(request: NextRequest) {
     const isAuthApi = pathname.startsWith("/api/auth");
 
     if (!payload && (isProtectedRoute || (isApiRoute && !isAuthApi))) {
+        console.warn(`[Proxy] Blocking unauthorized request to ${pathname}. isProtectedRoute=${isProtectedRoute}, isApiRoute=${isApiRoute}, isAuthApi=${isAuthApi}`);
         // For API routes, return 401 instead of redirect
         if (isApiRoute) {
             return NextResponse.json(
-                { error: "Authentication required" },
+                { error: "Authentication required (Proxy Block)" },
                 { status: 401 }
             );
         }

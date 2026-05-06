@@ -139,11 +139,15 @@ export async function register(
  * NOTE: Uses systemQuery because RLS context is not yet established.
  */
 export async function login(email: string, password: string) {
+    console.log(`[AuthService] Attempting login for email: ${email}`);
+    
     // 1. Find user in auth_users
     const authRes = await adminPool.query(
         "SELECT id, hashed_password FROM public.auth_users WHERE email = $1",
         [email]
     );
+
+    console.log(`[AuthService] User lookup result: ${authRes.rowCount} rows found`);
 
     if (authRes.rowCount === 0) {
         throw new Error("Invalid credentials");
