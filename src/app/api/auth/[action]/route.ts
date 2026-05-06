@@ -6,7 +6,7 @@ import * as authService from "@/features/auth/services/auth.service";
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: { action: string } }
+    { params }: { params: Promise<{ action: string }> }
 ) {
     const { action } = await params;
 
