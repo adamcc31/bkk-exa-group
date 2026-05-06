@@ -4,6 +4,11 @@
 
 import { Inngest } from "inngest";
 
+export const inngest = new Inngest({
+    id: "bkk-automatic-v3",
+    name: "BKK Automatic V3",
+});
+
 // ---- Event Types ----
 
 export type AiParseRequestedEvent = {
@@ -20,8 +25,3 @@ export type AiParseRequestedEvent = {
 export type InngestEvents = {
     "ai/parse.requested": AiParseRequestedEvent;
 };
-
-export const inngest = new Inngest<InngestEvents>({
-    id: "bkk-automatic-v3",
-    name: "BKK Automatic V3",
-});
