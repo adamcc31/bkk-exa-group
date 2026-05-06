@@ -13,7 +13,7 @@ import React from "react";
 
 export const dynamic = "force-dynamic";
 
-type RouteContext = { params: { transactionId: string } };
+type RouteContext = { params: Promise<{ transactionId: string }> };
 
 export async function GET(request: NextRequest, context: RouteContext) {
     const userId = request.headers.get("x-user-id");

@@ -10,7 +10,7 @@ import { withDbContext } from "@/shared/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
-type RouteContext = { params: { jobId: string } };
+type RouteContext = { params: Promise<{ jobId: string }> };
 
 export async function GET(request: NextRequest, context: RouteContext) {
     const { session, error } = await requireAuth(PERMISSIONS.AI_PARSE_VIEW_JOBS);
