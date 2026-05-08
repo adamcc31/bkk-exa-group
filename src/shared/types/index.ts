@@ -57,6 +57,7 @@ export interface User {
 export interface Transaction {
     id: string;
     company_id: string;
+    company_name?: string; // Fetched via JOIN
     created_by: string;
     type: TransactionType;
     payment_type: PaymentType;
@@ -133,33 +134,7 @@ export interface AuditLog {
 
 // ---- BKK Standardized Data (AI Output) ----
 
-export interface StandardizedBkkData {
-    header: {
-        company_name: string;
-        transaction_type: string; // "BKK" or "BKM"
-        doc_number: string; // e.g. "SREI BKK 001"
-        payment_type: string; // "BANK" or "CASH"
-        transaction_date: string;
-    };
-    info: {
-        paid_to: string;
-        division: string;
-        department: string;
-        total_amount: number;
-        purpose: string;
-    };
-    rows: Array<{
-        no: number;
-        description: string;
-        account_code: string;
-        amount: number;
-    }>;
-    signatories: {
-        received_by: string;
-        paid_by: string;
-        approved_by: string;
-    };
-}
+export * from "./bkk-document.types";
 
 // ---- API Response ----
 

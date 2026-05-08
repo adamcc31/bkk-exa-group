@@ -2,6 +2,9 @@
 // BKK PDF Document — @react-pdf/renderer
 // 13cm × 9cm landscape, Times New Roman
 // Nearly marginless, single page
+// 
+// WARNING: Data shape harus konsisten dengan bkk-document.types.ts
+// Jika mengubah struktur atau tampilan (HTML Preview), update kedua file secara bersamaan.
 // ============================================
 
 import React from "react";

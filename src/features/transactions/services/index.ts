@@ -72,14 +72,16 @@ export async function listTransactions(
         // 2. Get paginated data with items aggregated
         const dataRes = await client.query(
             `SELECT t.*, 
+                c.name as company_name,
                 COALESCE(
                     json_agg(ti.* ORDER BY ti.item_order) FILTER (WHERE ti.id IS NOT NULL), 
                     '[]'
                 ) as items
              FROM transactions t
              LEFT JOIN transaction_items ti ON t.id = ti.transaction_id
+             LEFT JOIN companies c ON t.company_id = c.id
              ${whereClause}
-             GROUP BY t.id
+             GROUP BY t.id, c.id
              ORDER BY t.${sanitizeSortColumn(sort_by)} ${sort_order === "asc" ? "ASC" : "DESC"}
              LIMIT $${nextParamIndex} OFFSET $${nextParamIndex + 1}`,
             [...params, pageSize, offset]
@@ -108,14 +110,16 @@ export async function getTransaction(
     return await withDbContext(session.user.id, session.activeCompanyId, session.role, session.user.company_id, async (client) => {
         const res = await client.query(
             `SELECT t.*, 
+                c.name as company_name,
                 COALESCE(
                     json_agg(ti.* ORDER BY ti.item_order) FILTER (WHERE ti.id IS NOT NULL), 
                     '[]'
                 ) as items
              FROM transactions t
              LEFT JOIN transaction_items ti ON t.id = ti.transaction_id
+             LEFT JOIN companies c ON t.company_id = c.id
              WHERE t.id = $1 AND t.is_deleted = false
-             GROUP BY t.id`,
+             GROUP BY t.id, c.id`,
             [id]
         );
 
@@ -172,9 +176,9 @@ export async function createTransaction(
                 transactionData.department,
                 transactionData.paid_to_name,
                 bkkNumber,
-                transactionData.received_by || "",
-                transactionData.paid_by || "BU NURUL",
-                transactionData.approved_by || "PAK NOVI",
+                transactionData.received_by || null,
+                transactionData.paid_by || null,
+                transactionData.approved_by || null,
                 transactionData.note || null,
                 "draft",
             ]
@@ -192,11 +196,14 @@ export async function createTransaction(
 
         // Return the full object
         const finalRes = await client.query(
-            `SELECT t.*, json_agg(ti.* ORDER BY ti.item_order) as items
+            `SELECT t.*, 
+                c.name as company_name,
+                json_agg(ti.* ORDER BY ti.item_order) as items
              FROM transactions t
              LEFT JOIN transaction_items ti ON t.id = ti.transaction_id
+             LEFT JOIN companies c ON t.company_id = c.id
              WHERE t.id = $1
-             GROUP BY t.id`,
+             GROUP BY t.id, c.id`,
             [transactionId]
         );
 
@@ -241,9 +248,9 @@ export async function updateTransaction(
                 const value = (transactionData as any)[field];
                 if (value !== undefined) {
                     fields.push(`${field} = $${i++}`);
-                    // Use fallback for signatories if empty string provided
-                    if ((field === "paid_by" || field === "approved_by") && !value) {
-                        values.push(field === "paid_by" ? "BU NURUL" : "PAK NOVI");
+                    // Convert empty string to null for signatories
+                    if ((field === "paid_by" || field === "approved_by" || field === "received_by") && !value) {
+                        values.push(null);
                     } else {
                         values.push(value);
                     }
@@ -279,11 +286,14 @@ export async function updateTransaction(
 
         // Return updated object
         const finalRes = await client.query(
-            `SELECT t.*, json_agg(ti.* ORDER BY ti.item_order) as items
+            `SELECT t.*, 
+                c.name as company_name,
+                json_agg(ti.* ORDER BY ti.item_order) as items
              FROM transactions t
              LEFT JOIN transaction_items ti ON t.id = ti.transaction_id
+             LEFT JOIN companies c ON t.company_id = c.id
              WHERE t.id = $1
-             GROUP BY t.id`,
+             GROUP BY t.id, c.id`,
             [id]
         );
 

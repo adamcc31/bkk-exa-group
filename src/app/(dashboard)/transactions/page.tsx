@@ -12,7 +12,9 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { StatCard } from "@/shared/components/data-display/stat-card";
 import { formatCurrency, formatDate } from "@/shared/lib/format";
-import type { Transaction, ApiResponse, UserRole } from "@/shared/types";
+import { BkkPreviewModal } from "@/features/pdf-export/components/bkk-preview-modal";
+import { mapTransactionToBkkData } from "@/features/transactions/utils/mapper";
+import type { Transaction, ApiResponse, UserRole, StandardizedBkkData } from "@/shared/types";
 
 const FILTER_FIELDS: FilterField[] = [
     {
@@ -54,6 +56,11 @@ export default function TransactionsPage() {
     const [filters, setFilters] = useState<Record<string, string>>({});
     const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
     const [userRole, setUserRole] = useState<UserRole | null>(null);
+    const [activeCompanyName, setActiveCompanyName] = useState<string>("EXATA");
+
+    // Modal State
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [selectedBkkData, setSelectedBkkData] = useState<StandardizedBkkData | null>(null);
 
 
     const fetchData = useCallback(async () => {
@@ -70,15 +77,22 @@ export default function TransactionsPage() {
         ]);
 
         const txData: ApiResponse<Transaction[]> = await txRes.json();
-        const statsData = await statsRes.json();
-        const meData = await meRes.json();
 
         if (txData.success && txData.data) {
             setTransactions(txData.data);
             if (txData.meta) setMeta(txData.meta);
         }
-        if (statsData.success) setStats(statsData.data);
-        if (meData.success) setUserRole(meData.data.role as UserRole);
+        if (statsRes.ok) {
+            const statsData = await statsRes.json();
+            if (statsData.success) setStats(statsData.data);
+        }
+        if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData.success) {
+                setUserRole(meData.data.role as UserRole);
+                if (meData.data.activeCompanyName) setActiveCompanyName(meData.data.activeCompanyName);
+            }
+        }
         setLoading(false);
     }, [filters, meta.page]);
 
@@ -211,12 +225,29 @@ export default function TransactionsPage() {
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            window.open(`/api/pdf/${row.id as string}`, "_blank");
+                            const bkkData = mapTransactionToBkkData(row as unknown as Transaction);
+                            // Inject ID for the PDF link in modal
+                            (bkkData as any).id = row.id;
+                            setSelectedBkkData(bkkData);
+                            setIsPreviewOpen(true);
                         }}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-[var(--color-primary)] hover:bg-blue-50 transition-colors"
-                        title="Preview PDF"
+                        title="Lihat / Export Dokumen"
                     >
-                        <span className="material-symbols-outlined text-base">picture_as_pdf</span>
+                        <span className="material-symbols-outlined text-base">visibility</span>
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const bkkData = mapTransactionToBkkData(row as unknown as Transaction);
+                            (bkkData as any).id = row.id;
+                            setSelectedBkkData(bkkData);
+                            setIsPreviewOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                        title="Export JPG"
+                    >
+                        <span className="material-symbols-outlined text-base">image</span>
                     </button>
                     {canDelete && (
                         <button
@@ -355,6 +386,12 @@ export default function TransactionsPage() {
                     )}
                 </>
             )}
+            {/* Modal */}
+            <BkkPreviewModal
+                isOpen={isPreviewOpen}
+                onClose={() => setIsPreviewOpen(false)}
+                data={selectedBkkData}
+            />
         </div>
     );
 }

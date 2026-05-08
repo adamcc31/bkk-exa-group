@@ -150,6 +150,7 @@ export async function login(email: string, password: string) {
     console.log(`[AuthService] User lookup result: ${authRes.rowCount} rows found`);
 
     if (authRes.rowCount === 0) {
+        console.warn(`[AuthService] Login failed: Email ${email} not found`);
         throw new Error("Invalid credentials");
     }
 
@@ -158,6 +159,7 @@ export async function login(email: string, password: string) {
     // 2. Verify password
     const isValid = await bcrypt.compare(password, hashedPassword);
     if (!isValid) {
+        console.warn(`[AuthService] Login failed: Invalid password for ${email}`);
         throw new Error("Invalid credentials");
     }
 
