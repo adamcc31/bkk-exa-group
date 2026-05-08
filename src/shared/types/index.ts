@@ -2,6 +2,8 @@
 // Shared Domain Types — BKK Automatic V3
 // ============================================
 
+import type { StandardizedBkkData } from "./bkk-document.types";
+
 // ---- Enums ----
 
 export type UserRole = "admin" | "finance" | "staff";
@@ -161,3 +163,5 @@ export interface AuthSession {
     activeCompanyId: string;
     role: UserRole;
 }
+
+export * from "./bkk-document.types";

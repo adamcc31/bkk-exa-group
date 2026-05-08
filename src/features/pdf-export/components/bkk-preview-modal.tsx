@@ -19,7 +19,7 @@ export function BkkPreviewModal({ isOpen, onClose, data }: BkkPreviewModalProps)
     if (!isOpen || !data) return null;
 
     async function handleExportJpg() {
-        if (!documentRef.current) return;
+        if (!documentRef.current || !data) return;
         setExporting(true);
         try {
             const dataUrl = await toJpeg(documentRef.current, {
