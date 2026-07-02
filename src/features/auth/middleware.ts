@@ -21,7 +21,7 @@ export { hasPermission };
 export async function getAuthSession(): Promise<AuthSession | null> {
     const headerList = await headers();
     const userId = headerList.get("x-user-id");
-    const activeCompanyId = headerList.get("x-active-company-id");
+    let activeCompanyId = headerList.get("x-active-company-id");
     const role = headerList.get("x-user-role");
 
     if (!userId || !activeCompanyId || !role) return null;
@@ -31,13 +31,19 @@ export async function getAuthSession(): Promise<AuthSession | null> {
         `SELECT u.*, row_to_json(r.*) as role 
          FROM public.users u 
          JOIN public.roles r ON u.role_id = r.id 
-         WHERE u.id = $1`,
+         WHERE u.id = $1 AND u.is_active = true`,
         [userId]
     );
 
     if (res.rowCount === 0) return null;
 
     const user = res.rows[0] as User;
+
+    // Multi-Tenant Isolation: Enforce activeCompanyId restriction for non-admins
+    if (role !== "admin" && activeCompanyId !== user.company_id) {
+        console.warn(`[getAuthSession] Forcing activeCompanyId to user own company_id (${user.company_id}) for role: ${role}`);
+        activeCompanyId = user.company_id;
+    }
 
     return {
         user,

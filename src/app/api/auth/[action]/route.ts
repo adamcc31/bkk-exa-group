@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as jose from "jose";
 import * as authService from "@/features/auth/services/auth.service";
 
 /**
@@ -72,7 +73,19 @@ async function handleRefresh(request: NextRequest) {
         throw new Error("Refresh token missing");
     }
 
-    const { accessToken } = await authService.refreshAccessToken(refreshToken);
+    const oldAccessToken = request.cookies.get("access_token")?.value;
+    let preferredActiveCompanyId: string | undefined;
+
+    if (oldAccessToken) {
+        try {
+            const payload = jose.decodeJwt(oldAccessToken);
+            preferredActiveCompanyId = payload?.active_company_id as string;
+        } catch (e) {
+            console.warn("[AuthRoute] Failed to decode expired access token payload:", e);
+        }
+    }
+
+    const { accessToken } = await authService.refreshAccessToken(refreshToken, preferredActiveCompanyId);
     const response = NextResponse.json({ success: true });
 
     // Update Access Token Cookie

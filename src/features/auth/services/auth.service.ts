@@ -168,9 +168,14 @@ export async function login(email: string, password: string) {
         `SELECT u.id, u.email, u.full_name, u.company_id, r.name as role 
          FROM public.users u 
          JOIN public.roles r ON u.role_id = r.id 
-         WHERE u.id = $1`,
+         WHERE u.id = $1 AND u.is_active = true`,
         [userId]
     );
+
+    if (userRes.rowCount === 0) {
+        console.warn(`[AuthService] Login failed: User profile not found or inactive for user ${userId}`);
+        throw new Error("Invalid credentials");
+    }
 
     const profile = userRes.rows[0];
     const user: AuthUser = {
@@ -202,7 +207,7 @@ export async function login(email: string, password: string) {
 /**
  * Refresh access token
  */
-export async function refreshAccessToken(refreshToken: string) {
+export async function refreshAccessToken(refreshToken: string, preferredActiveCompanyId?: string) {
     // Lookup langsung by hash — O(1) dengan index
     const hash = crypto.createHash("sha256").update(refreshToken).digest("hex");
 
@@ -224,7 +229,7 @@ export async function refreshAccessToken(refreshToken: string) {
         `SELECT u.id, u.email, u.full_name, u.company_id, r.name as role 
          FROM public.users u 
          JOIN public.roles r ON u.role_id = r.id 
-         WHERE u.id = $1`,
+         WHERE u.id = $1 AND u.is_active = true`,
         [userId]
     );
 
@@ -233,13 +238,29 @@ export async function refreshAccessToken(refreshToken: string) {
     }
 
     const profile = userRes.rows[0];
+
+    // Preserve active company state if valid and authorized
+    let activeCompanyId = profile.company_id;
+    if (preferredActiveCompanyId) {
+        if (profile.role === "admin") {
+            const companyCheck = await adminPool.query("SELECT id FROM public.companies WHERE id = $1", [
+                preferredActiveCompanyId,
+            ]);
+            if (companyCheck.rowCount !== null && companyCheck.rowCount > 0) {
+                activeCompanyId = preferredActiveCompanyId;
+            }
+        } else if (preferredActiveCompanyId === profile.company_id) {
+            activeCompanyId = preferredActiveCompanyId;
+        }
+    }
+
     const user: AuthUser = {
         id: profile.id,
         email: profile.email,
         full_name: profile.full_name,
         company_id: profile.company_id,
         role: profile.role,
-        active_company_id: profile.company_id,
+        active_company_id: activeCompanyId,
     };
 
     const accessToken = await signAccessToken(user);
@@ -255,7 +276,7 @@ export async function switchActiveCompany(userId: string, newCompanyId: string) 
         `SELECT u.id, u.email, u.full_name, u.company_id, r.name as role 
          FROM public.users u 
          JOIN public.roles r ON u.role_id = r.id 
-         WHERE u.id = $1`,
+         WHERE u.id = $1 AND u.is_active = true`,
         [userId]
     );
 

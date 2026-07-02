@@ -4,12 +4,63 @@ import { getJWTPayload } from "@/shared/lib/auth/jwt";
 // 1. Define paths that require authentication
 const PROTECTED_PATHS = ["/admin", "/ai-parser", "/reports", "/transactions"];
 
+// Simple In-Memory Rate Limiter for Expensive Endpoints
+const ipRequestCounts = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_MINUTE = 60; // 60 requests/min limit
+
+function isRateLimited(ip: string): boolean {
+    const now = Date.now();
+    const requestData = ipRequestCounts.get(ip);
+
+    if (!requestData) {
+        ipRequestCounts.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+
+    if (now > requestData.resetTime) {
+        ipRequestCounts.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+
+    requestData.count++;
+    return requestData.count > MAX_REQUESTS_PER_MINUTE;
+}
+
 /**
- * Next.js Proxy for Authentication and Context Forwarding
+ * Next.js Global Proxy for Authentication, CSRF Protection, and Context Forwarding
  */
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
     console.log(`[Proxy] Request: ${request.method} ${pathname}`);
+
+    // Rate Limiting for expensive endpoints (AI parsing and PDF rendering)
+    const isExpensiveApi = pathname.startsWith("/api/ai-parse") || pathname.startsWith("/api/pdf");
+    if (isExpensiveApi) {
+        const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "127.0.0.1";
+        if (isRateLimited(ip)) {
+            console.warn(`[Proxy] Rate limit exceeded for IP ${ip} on path ${pathname}`);
+            return NextResponse.json(
+                { error: "Too many requests. Please try again in a minute." },
+                { status: 429 }
+            );
+        }
+    }
+
+    // CSRF Protection: Verify Origin on state-changing requests (non-GET)
+    const origin = request.headers.get("origin");
+    const host = request.headers.get("host");
+    if (request.method !== "GET" && origin) {
+        // Ensure request comes from the same host
+        const isSameOrigin = origin.includes(host || "");
+        if (!isSameOrigin) {
+            console.warn(`[Proxy] Blocked potential CSRF request from ${origin} to ${pathname}`);
+            return NextResponse.json(
+                { error: "CSRF verification failed" },
+                { status: 403 }
+            );
+        }
+    }
 
     const accessToken = request.cookies.get("access_token")?.value;
     let payload = null;
@@ -28,8 +79,6 @@ export async function proxy(request: NextRequest) {
     }
 
     // 2. Determine if route is protected
-    // Protect root "/" if it's the dashboard entry, and all paths in PROTECTED_PATHS
-    // Also protect all /api routes except /api/auth/*
     const isRoot = pathname === "/";
     const isProtectedRoute = isRoot || PROTECTED_PATHS.some(p => pathname.startsWith(p));
     const isApiRoute = pathname.startsWith("/api");
@@ -50,13 +99,20 @@ export async function proxy(request: NextRequest) {
     // 3. Forward User Context via Headers if authenticated
     const requestHeaders = new Headers(request.headers);
     if (payload && payload.sub) {
-        console.log(`[Middleware] Authenticated: ${payload.email} (${payload.role}) | Active: ${payload.active_company_id} | Own: ${payload.company_id}`);
+        // Multi-Tenant Isolation: Enforce active_company_id restriction for non-admins
+        let activeCompanyId = payload.active_company_id;
+        if (payload.role !== "admin" && activeCompanyId !== payload.company_id) {
+            console.warn(`[Proxy] Non-admin user ${payload.email} attempted to use mismatched company ID: ${activeCompanyId}. Forcing own company ID: ${payload.company_id}`);
+            activeCompanyId = payload.company_id;
+        }
+
+        console.log(`[Proxy] Authenticated: ${payload.email} (${payload.role}) | Active: ${activeCompanyId} | Own: ${payload.company_id}`);
         requestHeaders.set("x-user-id", payload.sub);
-        requestHeaders.set("x-active-company-id", payload.active_company_id);
+        requestHeaders.set("x-active-company-id", activeCompanyId);
         requestHeaders.set("x-own-company-id", payload.company_id);
         requestHeaders.set("x-user-role", payload.role);
     } else if (isProtectedRoute || (isApiRoute && !isAuthApi)) {
-        console.warn(`[Middleware] Unauthorized access attempt to: ${pathname}`);
+        console.warn(`[Proxy] Unauthorized access attempt to: ${pathname}`);
     }
 
     return NextResponse.next({

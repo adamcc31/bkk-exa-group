@@ -40,6 +40,16 @@ export async function POST(request: NextRequest) {
         }
 
         const jobIds: string[] = [];
+        const events: Array<{
+            name: "ai/parse.requested";
+            data: {
+                job_id: string;
+                file_path: string;
+                company_id: string;
+                initiated_by: string;
+                original_filename: string;
+            };
+        }> = [];
 
         // Use database context for atomic job creation
         await withDbContext(userId, activeCompanyId, role, ownCompanyId, async (client) => {
@@ -60,8 +70,8 @@ export async function POST(request: NextRequest) {
                 const jobId = res.rows[0].id;
                 jobIds.push(jobId);
 
-                // Trigger background worker
-                await inngest.send({
+                // Queue event for sending after commit
+                events.push({
                     name: "ai/parse.requested",
                     data: {
                         job_id: jobId,
@@ -73,6 +83,11 @@ export async function POST(request: NextRequest) {
                 });
             }
         });
+
+        // Trigger background workers after successful DB transaction commit
+        for (const event of events) {
+            await inngest.send(event);
+        }
 
         return NextResponse.json(
             {

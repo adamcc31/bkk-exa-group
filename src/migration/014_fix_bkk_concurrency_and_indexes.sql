@@ -1,11 +1,29 @@
 -- ============================================
--- Migration 003: Auto-generate BKK/BKM number
--- Run this in Supabase SQL Editor
+-- Migration 014 — Fix BKK Concurrency & Indexes
 -- ============================================
 
--- Function to generate sequential document numbers
--- Format: [COMPANY_SHORT_CODE] [BKK/BKM] [SEQ_PADDED_3]
--- Example: SREI BKK 001, ESK BKM 002
+-- 1. Deduplicate any existing duplicate active BKK numbers (per company + type + bkk_number)
+WITH duplicates AS (
+  SELECT id, ROW_NUMBER() OVER(PARTITION BY company_id, type, bkk_number ORDER BY created_at) as rn
+  FROM transactions
+  WHERE is_deleted = false AND bkk_number <> ''
+)
+UPDATE transactions t
+SET bkk_number = t.bkk_number || '_DUP_' || (d.rn - 1)
+FROM duplicates d
+WHERE t.id = d.id AND d.rn > 1;
+
+-- 2. Create partial unique index to enforce uniqueness of active BKK/BKM numbers per company + type
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_bkk_number 
+  ON transactions (company_id, bkk_number, type) 
+  WHERE (is_deleted = false AND bkk_number <> '');
+
+-- 3. Create partial index to speed up transactions queries filtering by active status
+CREATE INDEX IF NOT EXISTS idx_transactions_active 
+  ON transactions (company_id, transaction_date) 
+  WHERE (is_deleted = false);
+
+-- 4. Re-create the generate_bkk_number function with locking
 CREATE OR REPLACE FUNCTION generate_bkk_number(
   p_company_id UUID,
   p_type VARCHAR

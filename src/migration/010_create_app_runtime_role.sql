@@ -8,7 +8,7 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_runtime') THEN
     CREATE ROLE app_runtime WITH
       LOGIN
-      PASSWORD '@Adamleo12331'
+      PASSWORD '${APP_RUNTIME_PASSWORD}'
       NOSUPERUSER
       NOCREATEDB
       NOCREATEROLE

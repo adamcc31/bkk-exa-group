@@ -22,6 +22,16 @@ export async function POST(request: NextRequest) {
         );
     }
 
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(activeCompanyId)) {
+        return NextResponse.json(
+            { error: "Invalid active company context" },
+            { status: 400 }
+        );
+    }
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
+
     try {
         const formData = await request.formData();
         const files = formData.getAll("files") as File[];
@@ -36,6 +46,15 @@ export async function POST(request: NextRequest) {
         const uploadedPaths: string[] = [];
 
         for (const file of files) {
+            // Validation: Size
+            if (file.size > MAX_FILE_SIZE) {
+                console.warn(`File size exceeds limit: ${file.name} (${file.size} bytes)`);
+                return NextResponse.json(
+                    { error: `File ${file.name} exceeds the maximum size limit of 5MB` },
+                    { status: 400 }
+                );
+            }
+
             // Validation: Type
             if (!ALLOWED_TYPES.includes(file.type)) {
                 console.warn(`File type not allowed: ${file.type}`);

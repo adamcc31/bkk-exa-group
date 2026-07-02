@@ -89,7 +89,7 @@ const s = StyleSheet.create({
         borderBottom: B,
         paddingHorizontal: 6,
         paddingVertical: 3,
-        height: 38,
+        minHeight: 38,
     },
     infoTitle: {
         fontSize: 7,
@@ -124,7 +124,7 @@ const s = StyleSheet.create({
     tableRow: {
         flexDirection: "row",
         borderBottom: B,
-        height: 14,
+        minHeight: 14,
     },
     cellNo: {
         width: GRID_RATIOS.NO,

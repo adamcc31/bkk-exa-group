@@ -220,6 +220,15 @@ export async function updateTransaction(
     input: UpdateTransactionInput
 ): Promise<ApiResponse<Transaction>> {
     return await withDbContext(session.user.id, session.activeCompanyId, session.role, session.user.company_id, async (client) => {
+        // Enforce active tenant access check (RLS active)
+        const checkRes = await client.query("SELECT id FROM transactions WHERE id = $1", [id]);
+        if (checkRes.rowCount === 0) {
+            return {
+                success: false,
+                error: { code: "NOT_FOUND", message: "Transaction not found" }
+            };
+        }
+
         const { items, ...transactionData } = input;
 
         const UPDATABLE_FIELDS: (keyof UpdateTransactionInput)[] = [

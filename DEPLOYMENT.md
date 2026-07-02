@@ -56,3 +56,12 @@ Railway akan otomatis redeploy ke konfigurasi lama.
 |---|---|---|
 | DATABASE_URL | postgresql://app_runtime:... | Untuk aplikasi |
 | DATABASE_ADMIN_URL | postgresql://postgres:... | Untuk migration saja, jangan expose ke app |
+
+---
+
+## 🛡️ Risk Register & Accepted Risks
+
+### 1. In-Memory IP Rate Limiter
+* **Accepted Risk**: Jendela rolling updates dan local container memory. Karena rate-limiter diletakkan langsung di memori Proxy gateway (`src/proxy.ts`), setiap kali Railway melakukan rolling update (proses deploy kontainer baru), data limiter di memori instans lama akan ter-reset, dan instans baru memulai penghitungan request IP dari nol.
+* **Mitigasi**: Batasan request diatur ke 60 request/menit, yang cukup toleran untuk penggunaan internal perusahaan dan mencegah reset memori disalahgunakan untuk meluncurkan serangan DDoS masif.
+* **Pemicu Peninjauan Ulang (Revisit Trigger)**: Begitu arsitektur aplikasi dinaikkan dari instans tunggal (*single-instance*) ke multi-instans (*horizontal scaling / multi-instance deployment*), tim infrastruktur **wajib** bermigrasi dari in-memory limiter ke shared Redis-backed rate-limiter (menggunakan Upstash Redis atau Redis Railway Add-on) agar limitasi IP tersinkronisasi lintas kontainer secara konsisten.

@@ -88,7 +88,7 @@ export const BkkDocumentHtml = React.forwardRef<HTMLDivElement, BkkDocumentHtmlP
                             // 6.5pt margin + 6pt padding). Nilai 40pt adalah toleransi minimum
                             // yang menghindari clipping tanpa merusak proporsi dokumen secara visual.
                             // JANGAN ubah nilai ini tanpa menjalankan pixel comparison test.
-                            height: "40pt"
+                            minHeight: "40pt"
                         }}
                     >
                         <div className="font-bold text-[7pt] underline uppercase" style={{ marginTop: "2pt", marginBottom: "2pt" }}>
@@ -107,7 +107,7 @@ export const BkkDocumentHtml = React.forwardRef<HTMLDivElement, BkkDocumentHtmlP
                         <div className="flex text-[8pt]">
                             <div className="w-[65pt]">Untuk keperluan</div>
                             <div className="w-[8pt]">:</div>
-                            <div className="font-bold truncate" title={info.purpose}>{info.purpose}</div>
+                            <div className="font-bold whitespace-normal break-words flex-1" title={info.purpose}>{info.purpose}</div>
                         </div>
                     </div>
 
@@ -122,9 +122,9 @@ export const BkkDocumentHtml = React.forwardRef<HTMLDivElement, BkkDocumentHtmlP
                     {/* Table Rows */}
                     <div className="flex-1 flex flex-col overflow-hidden">
                         {paddedRows.slice(0, PDF_SPECS.MAX_DATA_ROWS).map((row, idx) => (
-                            <div key={idx} className={`flex h-[14pt] text-[8pt] ${borderStyle} border-t-0 border-x-0`}>
+                            <div key={idx} className={`flex min-h-[14pt] text-[8pt] ${borderStyle} border-t-0 border-x-0`}>
                                 <div className={`flex items-center justify-center ${borderStyle} border-y-0 border-l-0`} style={{ width: PDF_SPECS.GRID_RATIOS.NO }}>{idx + 1}</div>
-                                <div className={`flex items-center px-1 truncate ${borderStyle} border-y-0 border-l-0`} style={{ width: PDF_SPECS.GRID_RATIOS.DESCRIPTION }}>{row.description}</div>
+                                <div className={`flex items-center px-1 whitespace-normal break-words ${borderStyle} border-y-0 border-l-0`} style={{ width: PDF_SPECS.GRID_RATIOS.DESCRIPTION }}>{row.description}</div>
                                 <div className={`flex items-center justify-center ${borderStyle} border-y-0 border-l-0`} style={{ width: PDF_SPECS.GRID_RATIOS.ACCOUNT_CODE }}>{row.account_code}</div>
                                 <div className="flex items-center justify-end px-1" style={{ width: PDF_SPECS.GRID_RATIOS.AMOUNT }}>
                                     {row.amount > 0 ? formatCurrency(row.amount) : ""}

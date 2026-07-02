@@ -11,6 +11,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 import { formatCurrency } from "@/shared/lib/format";
 import { AI_CONFIG } from "@/shared/lib/constants";
+import { uploadFilesToStorage } from "@/features/ai-parser/components/image-preprocessor";
 import type { StandardizedBkkData, AiJobStatus } from "@/shared/types";
 
 interface JobInfo {
@@ -61,20 +62,10 @@ export default function AiParserPage() {
         setError(null);
 
         try {
-            // 1. Upload files via server-side API (bypasses RLS)
-            const formData = new FormData();
-            for (const file of files) {
-                formData.append("files", file);
-            }
+            // 1. Upload preprocessed files via client-side uploader
+            const filePaths = await uploadFilesToStorage(files, "");
 
-            const uploadRes = await fetch("/api/upload", {
-                method: "POST",
-                body: formData,
-            });
-
-            const uploadResult = await uploadRes.json();
-
-            if (!uploadResult.success || uploadResult.data.file_paths.length === 0) {
+            if (filePaths.length === 0) {
                 setError("Semua file gagal di-upload");
                 setUploading(false);
                 return;
@@ -84,7 +75,7 @@ export default function AiParserPage() {
             const res = await fetch("/api/ai-parse", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file_paths: uploadResult.data.file_paths }),
+                body: JSON.stringify({ file_paths: filePaths }),
             });
 
             const result = await res.json();

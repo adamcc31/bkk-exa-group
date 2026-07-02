@@ -56,7 +56,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const result = await updateTransaction(session, id, parsed.data);
-    return NextResponse.json(result, { status: result.success ? 200 : 500 });
+    return NextResponse.json(result, {
+        status: result.success ? 200 : (result.error?.code === "NOT_FOUND" ? 404 : 500),
+    });
 }
 
 // DELETE /api/transactions/[id]
@@ -67,5 +69,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const { id } = await context.params;
     const result = await softDeleteTransaction(session, id);
 
-    return NextResponse.json(result, { status: result.success ? 200 : 500 });
+    return NextResponse.json(result, {
+        status: result.success ? 200 : (result.error?.code === "NOT_FOUND" ? 404 : 500),
+    });
 }

@@ -44,12 +44,24 @@ export async function uploadFilesToStorage(
     const formData = new FormData();
 
     for (const file of files) {
-        const preprocessed = await preprocessImage(file);
-        // Create a new File object from the preprocessed blob to preserve the name
-        const preprocessedFile = new File([preprocessed], file.name, {
-            type: "image/jpeg",
-        });
-        formData.append("files", preprocessedFile);
+        if (file.type === "application/pdf") {
+            // Bypass preprocessing for PDF files
+            formData.append("files", file);
+        } else if (file.type.startsWith("image/")) {
+            try {
+                const preprocessed = await preprocessImage(file);
+                // Create a new File object from the preprocessed blob to preserve the name
+                const preprocessedFile = new File([preprocessed], file.name, {
+                    type: "image/jpeg",
+                });
+                formData.append("files", preprocessedFile);
+            } catch (err) {
+                console.error(`Failed to compress image ${file.name}, uploading raw image:`, err);
+                formData.append("files", file);
+            }
+        } else {
+            formData.append("files", file);
+        }
     }
 
     try {

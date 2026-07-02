@@ -33,13 +33,19 @@ async function runMigrations() {
         const migrations = [
             "src/migration/010_create_app_runtime_role.sql",
             "src/migration/011_fix_rls_policies_with_check.sql",
-            "src/migration/012_fix_views_security_invoker.sql"
+            "src/migration/012_fix_views_security_invoker.sql",
+            "src/migration/014_fix_bkk_concurrency_and_indexes.sql"
         ];
 
         for (const file of migrations) {
             console.log(`\nStep: Executing ${file}...`);
             const filePath = path.resolve(process.cwd(), file);
-            const sql = fs.readFileSync(filePath, "utf-8");
+            let sql = fs.readFileSync(filePath, "utf-8");
+            
+            if (file.endsWith("010_create_app_runtime_role.sql")) {
+                const appRuntimePassword = process.env.APP_RUNTIME_PASSWORD || "ChangeMeInProduction123!";
+                sql = sql.replace(/\$\{APP_RUNTIME_PASSWORD\}/g, appRuntimePassword);
+            }
             
             await client.query(sql);
             console.log(`✅ ${path.basename(file)} complete`);

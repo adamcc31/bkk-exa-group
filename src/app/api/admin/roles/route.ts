@@ -4,30 +4,28 @@
 // ============================================
 
 import { NextResponse, type NextRequest } from "next/server";
+import { requireAuth } from "@/features/auth";
+import { PERMISSIONS } from "@/shared/lib/constants";
 import { withDbContext } from "@/shared/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-    const userId = request.headers.get("x-user-id");
-    const activeCompanyId = request.headers.get("x-active-company-id");
-    const role = request.headers.get("x-user-role");
-
-    if (!userId || !role) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireAuth(PERMISSIONS.USER_READ);
+    if (error) return error;
 
     try {
         // Use database context
         const data = await withDbContext(
-            userId,
-            activeCompanyId,
-            role,
-            request.headers.get("x-own-company-id"),
+            session.user.id,
+            session.activeCompanyId,
+            session.role,
+            session.user.company_id,
             async (client) => {
                 const res = await client.query("SELECT * FROM roles ORDER BY name ASC");
-            return res.rows;
-        });
+                return res.rows;
+            }
+        );
 
         return NextResponse.json({ success: true, data });
     } catch (error: any) {

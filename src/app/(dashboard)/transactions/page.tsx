@@ -70,10 +70,9 @@ export default function TransactionsPage() {
             ...filters,
         });
 
-        const [txRes, statsRes, meRes] = await Promise.all([
+        const [txRes, statsRes] = await Promise.all([
             fetch(`/api/transactions?${params}`),
             fetch("/api/dashboard/stats"),
-            fetch("/api/me"),
         ]);
 
         const txData: ApiResponse<Transaction[]> = await txRes.json();
@@ -86,19 +85,32 @@ export default function TransactionsPage() {
             const statsData = await statsRes.json();
             if (statsData.success) setStats(statsData.data);
         }
-        if (meRes.ok) {
-            const meData = await meRes.json();
-            if (meData.success) {
-                setUserRole(meData.data.role as UserRole);
-                if (meData.data.activeCompanyName) setActiveCompanyName(meData.data.activeCompanyName);
-            }
-        }
         setLoading(false);
     }, [filters, meta.page]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    useEffect(() => {
+        async function fetchMe() {
+            try {
+                const res = await fetch("/api/me");
+                if (res.ok) {
+                    const meData = await res.json();
+                    if (meData.success) {
+                        setUserRole(meData.data.role as UserRole);
+                        if (meData.data.activeCompanyName) {
+                            setActiveCompanyName(meData.data.activeCompanyName);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch current user profile:", e);
+            }
+        }
+        fetchMe();
+    }, []);
 
     async function handleSoftDelete(id: string) {
         if (!confirm("Apakah Anda yakin ingin menghapus transaksi ini?")) return;
