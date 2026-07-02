@@ -1,34 +1,22 @@
 -- ============================================
--- Migration 014 — Fix BKK Concurrency & Indexes
+-- Migration 008 — Fix generate_bkk_number Security Guard
+--
+-- ROOT CAUSE (Temuan Otorisasi):
+--   generate_bkk_number menggunakan SECURITY DEFINER, menerima p_company_id,
+--   dan dapat dipanggil secara bebas dengan argument company_id milik tenant lain.
+--   Hal ini membocorkan short_code dan count transaksi tenant lain.
+--
+-- FIX:
+--   Tambahkan check di dalam fungsi: jika user bukan 'admin' dan mencoba
+--   meminta nomor dokumen untuk company_id yang berbeda dengan active_company_id()
+--   dari sesi mereka, lemparkan SQL exception.
 -- ============================================
 
--- 1. Deduplicate any existing duplicate active BKK numbers (per company + type + bkk_number)
-WITH duplicates AS (
-  SELECT id, ROW_NUMBER() OVER(PARTITION BY company_id, type, bkk_number ORDER BY created_at) as rn
-  FROM transactions
-  WHERE is_deleted = false AND bkk_number <> ''
-)
-UPDATE transactions t
-SET bkk_number = t.bkk_number || '_DUP_' || (d.rn - 1)
-FROM duplicates d
-WHERE t.id = d.id AND d.rn > 1;
-
--- 2. Create partial unique index to enforce uniqueness of active BKK/BKM numbers per company + type
-CREATE UNIQUE INDEX IF NOT EXISTS unique_active_bkk_number 
-  ON transactions (company_id, bkk_number, type) 
-  WHERE (is_deleted = false AND bkk_number <> '');
-
--- 3. Create partial index to speed up transactions queries filtering by active status
-CREATE INDEX IF NOT EXISTS idx_transactions_active 
-  ON transactions (company_id, transaction_date) 
-  WHERE (is_deleted = false);
-
--- 4. Re-create the generate_bkk_number function with locking and session validation
-CREATE OR REPLACE FUNCTION generate_bkk_number(
-  p_company_id UUID,
-  p_type VARCHAR
-)
-RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION public.generate_bkk_number(p_company_id uuid, p_type character varying)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
 DECLARE
   v_short_code VARCHAR;
   v_count INT;
@@ -69,5 +57,4 @@ BEGIN
 
   RETURN v_number;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
+$function$;
