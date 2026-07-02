@@ -83,8 +83,9 @@ export async function proxy(request: NextRequest) {
     const isProtectedRoute = isRoot || PROTECTED_PATHS.some(p => pathname.startsWith(p));
     const isApiRoute = pathname.startsWith("/api");
     const isAuthApi = pathname.startsWith("/api/auth");
+    const isHealthApi = pathname.startsWith("/api/health");
 
-    if (!payload && (isProtectedRoute || (isApiRoute && !isAuthApi))) {
+    if (!payload && (isProtectedRoute || (isApiRoute && !isAuthApi && !isHealthApi))) {
         console.warn(`[Proxy] Blocking unauthorized request to ${pathname}. isProtectedRoute=${isProtectedRoute}, isApiRoute=${isApiRoute}, isAuthApi=${isAuthApi}`);
         // For API routes, return 401 instead of redirect
         if (isApiRoute) {
