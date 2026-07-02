@@ -136,6 +136,16 @@ export async function withDbContext<T>(
             }
         }
 
+        // [TEMP-DIAG-POIN3] Verifikasi app.current_user_id PERSIS sebelum callback query dijalankan
+        // Ini membuktikan bahwa SET LOCAL sudah ter-set dalam blok BEGIN...COMMIT yang sama.
+        // AKAN DIHAPUS setelah verifikasi Bug B selesai.
+        const diagSettingRes = await client.query(
+            "SELECT current_setting('app.current_user_id', true) AS uid_in_tx, "
+            + "current_setting('app.user_role', true) AS role_in_tx, "
+            + "is_authenticated() AS is_auth_in_tx"
+        );
+        console.log(`[DB-DIAG-POIN3] BEFORE_CALLBACK uid=${diagSettingRes.rows[0].uid_in_tx || 'KOSONG'} role=${diagSettingRes.rows[0].role_in_tx || 'KOSONG'} is_auth=${diagSettingRes.rows[0].is_auth_in_tx}`);
+
         const result = await callback(client);
 
         await client.query("COMMIT");
