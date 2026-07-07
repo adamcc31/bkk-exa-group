@@ -373,7 +373,7 @@ async function testG(): Promise<void> {
 async function main() {
     console.log("=" .repeat(60));
     console.log("DRY-RUN TEST: app_runtime Role Verification");
-    console.log(`Connecting as: ${APP_URL.replace(/:[^@]+@/, ':***@')}`);
+    console.log(`Connecting as: ${APP_URL!.replace(/:[^@]+@/, ':***@')}`);
     console.log("=" .repeat(60));
 
     // 1. Verify we are NOT superuser via app_runtime connection
