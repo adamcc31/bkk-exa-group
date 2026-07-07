@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "EXATA Financial Dashboard",
   description:
     "Dashboard pengelolaan Bukti Kas Masuk (BKM) dan Bukti Kas Keluar (BKK) — Exata Group",
+  icons: {
+    icon: "/bkk-logo.ico",
+  },
 };
 
 export default function RootLayout({

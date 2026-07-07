@@ -48,15 +48,14 @@ export default function LoginPage() {
             <div className="w-full max-w-md">
                 {/* Logo */}
                 <div className="flex flex-col items-center mb-8">
-                    <div
-                        className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mb-4"
+                    <img
+                        src="/bkk-logo.svg"
+                        alt="BKK Logo"
+                        className="w-16 h-16 mb-4"
                         style={{
-                            backgroundColor: "var(--color-primary)",
-                            boxShadow: "var(--shadow-glow)",
+                            filter: "drop-shadow(0 0 12px rgba(37, 99, 235, 0.35))",
                         }}
-                    >
-                        E
-                    </div>
+                    />
                     <h1 className="text-2xl font-bold text-[var(--color-text-primary-light)]">
                         EXATA
                     </h1>

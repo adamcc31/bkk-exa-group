@@ -268,6 +268,46 @@ export async function refreshAccessToken(refreshToken: string, preferredActiveCo
 }
 
 /**
+ * Change user password (self-service)
+ * Requires current password verification
+ */
+export async function changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+    // 1. Verify current password
+    const authRes = await adminPool.query(
+        "SELECT hashed_password FROM public.auth_users WHERE id = $1",
+        [userId]
+    );
+
+    if (authRes.rowCount === 0) {
+        return { success: false, error: "User not found" };
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, authRes.rows[0].hashed_password);
+    if (!isValid) {
+        return { success: false, error: "Password lama tidak sesuai" };
+    }
+
+    // 2. Hash and update new password
+    const hashedNew = await bcrypt.hash(newPassword, 12);
+    await adminPool.query(
+        "UPDATE public.auth_users SET hashed_password = $1 WHERE id = $2",
+        [hashedNew, userId]
+    );
+
+    // 3. Invalidate all refresh tokens (force re-login on other devices)
+    await adminPool.query(
+        "DELETE FROM public.refresh_tokens WHERE user_id = $1",
+        [userId]
+    );
+
+    return { success: true };
+}
+
+/**
  * Switch active company (Admin only)
  */
 export async function switchActiveCompany(userId: string, newCompanyId: string) {

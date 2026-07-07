@@ -31,7 +31,12 @@ async function main() {
 
         // Ganti password runtime jika file-nya adalah 010_create_app_runtime_role.sql
         if (fileArg.endsWith("010_create_app_runtime_role.sql")) {
-            const appRuntimePassword = process.env.APP_RUNTIME_PASSWORD || "ChangeMeInProduction123!";
+            const appRuntimePassword = process.env.APP_RUNTIME_PASSWORD;
+            if (!appRuntimePassword) {
+                console.error("❌ FATAL SECURITY ERROR: APP_RUNTIME_PASSWORD tidak di-set di environment!");
+                console.error("Eksekusi dibatalkan untuk mencegah pembuatan role dengan password default.");
+                process.exit(1);
+            }
             sql = sql.replace(/\$\{APP_RUNTIME_PASSWORD\}/g, appRuntimePassword);
         }
 

@@ -54,6 +54,7 @@ export default function TransactionsPage() {
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState<Record<string, string>>({});
+    const [selectedMonth, setSelectedMonth] = useState<string>("");
     const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
     const [userRole, setUserRole] = useState<UserRole | null>(null);
     const [activeCompanyName, setActiveCompanyName] = useState<string>("EXATA");
@@ -65,14 +66,30 @@ export default function TransactionsPage() {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+
+        // Build month-based date range
+        const monthFilters: Record<string, string> = {};
+        if (selectedMonth) {
+            const [year, month] = selectedMonth.split('-');
+            const lastDay = new Date(Number(year), Number(month), 0).getDate();
+            monthFilters.date_from = `${selectedMonth}-01`;
+            monthFilters.date_to = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+        }
+
+        const mergedFilters = { ...filters, ...monthFilters };
+
         const params = new URLSearchParams({
             page: String(meta.page),
-            ...filters,
+            ...mergedFilters,
         });
+
+        const statsParams = new URLSearchParams();
+        if (monthFilters.date_from) statsParams.set('date_from', monthFilters.date_from);
+        if (monthFilters.date_to) statsParams.set('date_to', monthFilters.date_to);
 
         const [txRes, statsRes] = await Promise.all([
             fetch(`/api/transactions?${params}`),
-            fetch("/api/dashboard/stats"),
+            fetch(`/api/dashboard/stats?${statsParams}`),
         ]);
 
         const txData: ApiResponse<Transaction[]> = await txRes.json();
@@ -86,7 +103,7 @@ export default function TransactionsPage() {
             if (statsData.success) setStats(statsData.data);
         }
         setLoading(false);
-    }, [filters, meta.page]);
+    }, [filters, meta.page, selectedMonth]);
 
     useEffect(() => {
         fetchData();
@@ -288,14 +305,43 @@ export default function TransactionsPage() {
                         Kelola Bukti Kas Masuk & Keluar
                     </p>
                 </div>
-                <Button
-                    icon={
-                        <span className="material-symbols-outlined text-base">add</span>
-                    }
-                    onClick={() => router.push("/transactions/new")}
-                >
-                    Buat Transaksi
-                </Button>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="month-filter" className="text-xs text-gray-500 font-medium">
+                            Filter Bulan:
+                        </label>
+                        <input
+                            id="month-filter"
+                            type="month"
+                            value={selectedMonth}
+                            onChange={(e) => {
+                                setSelectedMonth(e.target.value);
+                                setMeta((prev) => ({ ...prev, page: 1 }));
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-700 bg-white hover:border-gray-300 focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)] outline-none transition-colors"
+                        />
+                        {selectedMonth && (
+                            <button
+                                onClick={() => {
+                                    setSelectedMonth("");
+                                    setMeta((prev) => ({ ...prev, page: 1 }));
+                                }}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                title="Hapus filter bulan"
+                            >
+                                <span className="material-symbols-outlined text-base">close</span>
+                            </button>
+                        )}
+                    </div>
+                    <Button
+                        icon={
+                            <span className="material-symbols-outlined text-base">add</span>
+                        }
+                        onClick={() => router.push("/transactions/new")}
+                    >
+                        Buat Transaksi
+                    </Button>
+                </div>
             </div>
 
             {/* Stats Cards */}

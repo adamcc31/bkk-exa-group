@@ -59,12 +59,11 @@ export function Sidebar({ role, userName, companyShortCode }: SidebarProps) {
         <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-30">
             {/* Brand */}
             <div className="h-16 flex items-center px-6 border-b border-gray-100">
-                <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm mr-3"
-                    style={{ backgroundColor: "var(--color-primary)" }}
-                >
-                    E
-                </div>
+                <img
+                    src="/bkk-logo.svg"
+                    alt="BKK Logo"
+                    className="w-8 h-8 mr-3"
+                />
                 <div>
                     <p className="text-sm font-bold text-gray-900 leading-none">EXATA GROUP</p>
                     <p className="text-[10px] text-gray-400 uppercase tracking-wider">
@@ -104,7 +103,7 @@ export function Sidebar({ role, userName, companyShortCode }: SidebarProps) {
 
             {/* User */}
             <div className="p-4 border-t border-gray-100">
-                <div className="flex items-center gap-3">
+                <a href="/profile" className="flex items-center gap-3 hover:bg-gray-50 rounded-lg p-1 -m-1 transition-colors">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
                         {userName
                             .split(" ")
@@ -119,7 +118,7 @@ export function Sidebar({ role, userName, companyShortCode }: SidebarProps) {
                         </p>
                         <p className="text-[10px] text-gray-400 uppercase">{role}</p>
                     </div>
-                </div>
+                </a>
             </div>
         </aside>
     );
