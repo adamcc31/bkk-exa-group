@@ -65,6 +65,11 @@ body {
 }
 
 /* Print Styles */
+@page {
+  size: 13cm 9cm;
+  margin: 0;
+}
+
 @media print {
   body {
     background-color: white !important;

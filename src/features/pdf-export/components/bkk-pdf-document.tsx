@@ -24,12 +24,12 @@ const { GRID_RATIOS, MAX_DATA_ROWS } = PDF_SPECS;
 
 // Height budget (255pt page - 8pt margins = 247pt):
 // Company:      14pt
-// Title:        20pt (more room for No. BKK + Tanggal)
-// Info:         38pt (more room for Dibayarkan Kepada)
+// Title:        20pt
+// Info:         38pt
 // Table header: 13pt
 // 6 data rows:  84pt (14pt each)
 // Total:        13pt
-// Signatures:   45pt (shorter)
+// Signatures:   45pt
 // Borders:      ~2pt
 // Sum:         229pt (18pt spare) ✓
 
@@ -186,7 +186,7 @@ const s = StyleSheet.create({
     // === Signatories (compact) ===
     sigSection: {
         flexDirection: "row",
-        height: 60,
+        height: 45,
     },
     sigCell: {
         flex: 1,

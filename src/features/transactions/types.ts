@@ -27,7 +27,7 @@ export const createTransactionSchema = z.object({
     paid_by: z.string().default(""),
     approved_by: z.string().default(""),
     note: z.string().nullable().optional(),
-    items: z.array(transactionItemSchema).min(1, "Minimal 1 item transaksi"),
+    items: z.array(transactionItemSchema).min(1, "Minimal 1 item transaksi").max(6, "Maksimal 6 item transaksi"),
 });
 
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;

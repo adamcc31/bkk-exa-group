@@ -120,7 +120,7 @@ export const BkkDocumentHtml = React.forwardRef<HTMLDivElement, BkkDocumentHtmlP
                     </div>
 
                     {/* Table Rows */}
-                    <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="flex-1 flex flex-col">
                         {paddedRows.slice(0, PDF_SPECS.MAX_DATA_ROWS).map((row, idx) => (
                             <div key={idx} className={`flex min-h-[14pt] text-[8pt] ${borderStyle} border-t-0 border-x-0`}>
                                 <div className={`flex items-center justify-center ${borderStyle} border-y-0 border-l-0`} style={{ width: PDF_SPECS.GRID_RATIOS.NO }}>{idx + 1}</div>
@@ -140,7 +140,7 @@ export const BkkDocumentHtml = React.forwardRef<HTMLDivElement, BkkDocumentHtmlP
                     </div>
 
                     {/* Signatories */}
-                    <div className="flex h-[60pt] shrink-0 text-[8pt]">
+                    <div className="flex h-[45pt] shrink-0 text-[8pt]">
                         <div className={`flex-1 flex flex-col justify-between items-center py-1 ${borderStyle} border-y-0 border-l-0`}>
                             <div className="font-bold">Diterima oleh</div>
                             <div className="font-bold uppercase text-[7pt]">{signatories.received_by}</div>
